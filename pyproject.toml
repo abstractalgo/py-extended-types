@@ -1,7 +1,7 @@
 [project]
 name = "py-extended-types"
-version = "0.2.0"
-description = "TypeScript-style shape contracts (`@expect_shape`, Partial/Required/Pick/Omit/Record, Map/Filter) for Python classes"
+version = "0.3.0"
+description = "TypeScript-style shape contracts (`@assert_shape`, Partial/Required/Pick/Omit/Record, Map/Filter) for Python classes"
 readme = "README.md"
 authors = [{ name = "Dragan Okanovic" }]
 requires-python = ">=3.11"

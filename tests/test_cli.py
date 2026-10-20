@@ -57,9 +57,9 @@ def test_check_is_silent_on_success_unless_verbose(
     # Given
     (tmp_path / "ok_models.py").write_text(
         "from pydantic import BaseModel\n"
-        "from py_extended_types import Partial, expect_shape\n\n\n"
+        "from py_extended_types import Partial, assert_shape\n\n\n"
         "class User(BaseModel):\n    id: int\n\n\n"
-        "@expect_shape(Partial(User))\n"
+        "@assert_shape(Partial(User))\n"
         "class Patch(BaseModel):\n    id: int | None = None\n"
     )
     monkeypatch.chdir(tmp_path)

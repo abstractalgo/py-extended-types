@@ -9,7 +9,7 @@ MODELS = textwrap.dedent(
     '''
     from pydantic import BaseModel, Field
 
-    from py_extended_types import Omit, Partial, expect_shape
+    from py_extended_types import Omit, Partial, assert_shape
 
 
     class User(BaseModel):
@@ -19,7 +19,7 @@ MODELS = textwrap.dedent(
         flag: bool = Field(title="Flag")
 
 
-    @expect_shape(Partial(User))
+    @assert_shape(Partial(User))
     class Patch(BaseModel):
         """Docstring stays first."""
 
@@ -29,12 +29,12 @@ MODELS = textwrap.dedent(
         extra: str = "x"
 
 
-    @expect_shape(Omit(User, "id"))
+    @assert_shape(Omit(User, "id"))
     class Create(BaseModel):
         name: str = "anon"
 
 
-    @expect_shape(Omit(User, "id"))
+    @assert_shape(Omit(User, "id"))
     class OnlyExtras(BaseModel):
         legacy: int
     '''
@@ -113,7 +113,7 @@ def test_applying_every_fix_makes_the_file_match(tmp_path: Path) -> None:
         '''
         from pydantic import BaseModel, Field
 
-        from py_extended_types import Omit, Partial, expect_shape
+        from py_extended_types import Omit, Partial, assert_shape
 
 
         class User(BaseModel):
@@ -123,7 +123,7 @@ def test_applying_every_fix_makes_the_file_match(tmp_path: Path) -> None:
             flag: bool = Field(title="Flag")
 
 
-        @expect_shape(Partial(User))
+        @assert_shape(Partial(User))
         class Patch(BaseModel):
             """Docstring stays first."""
 
@@ -133,14 +133,14 @@ def test_applying_every_fix_makes_the_file_match(tmp_path: Path) -> None:
             email: str | None = None
 
 
-        @expect_shape(Omit(User, "id"))
+        @assert_shape(Omit(User, "id"))
         class Create(BaseModel):
             name: str
             email: str
             flag: bool
 
 
-        @expect_shape(Omit(User, "id"))
+        @assert_shape(Omit(User, "id"))
         class OnlyExtras(BaseModel):
             name: str
             email: str

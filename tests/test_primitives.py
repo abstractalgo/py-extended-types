@@ -19,8 +19,8 @@ from py_extended_types import (
     Record,
     ShapeError,
     add_none,
+    assert_shape,
     core,
-    expect_shape,
     is_assignable,
 )
 from py_extended_types.core import Registration, check, registrations
@@ -114,7 +114,7 @@ def test_filter_keeps_matching_fields() -> None:
 
 
 def test_custom_helpers_compose_with_builtin_ones() -> None:
-    @expect_shape(
+    @assert_shape(
         Partial(
             Filter(User, lambda m: m.field.get("exclude") is not True, name="Public")
         )
@@ -139,7 +139,7 @@ def test_map_cannot_rename_fields() -> None:
 
 
 def test_errors_in_helper_functions_are_shape_errors() -> None:
-    @expect_shape(Filter(User, lambda m: m.field["exclude"], name="Broken"))
+    @assert_shape(Filter(User, lambda m: m.field["exclude"], name="Broken"))
     class Anything(BaseModel):
         pass
 
@@ -158,7 +158,7 @@ def test_shapes_do_no_work_outside_the_cli(monkeypatch: pytest.MonkeyPatch) -> N
         return True
 
     # When
-    @expect_shape(Partial(Filter(Map(object(), lambda m: m), spy)))  # type: ignore[arg-type]
+    @assert_shape(Partial(Filter(Map(object(), lambda m: m), spy)))  # type: ignore[arg-type]
     class Unchecked(BaseModel):
         id: int
 
@@ -205,7 +205,7 @@ def test_record_accepts_unions_of_literals_and_generic_values() -> None:
 
 
 def test_record_checks_a_class() -> None:
-    @expect_shape(Partial(Record(Literal["da", "ne"], float)))
+    @assert_shape(Partial(Record(Literal["da", "ne"], float)))
     class Scores(BaseModel):
         da: float | None = None
         ne: int | None = None

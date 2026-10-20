@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="py-extended-types",
-        description="Verify `@expect_shape` contracts between Python classes.",
+        description="Verify `@assert_shape` contracts between Python classes.",
     )
     parser.add_argument(
         "--version", action="version", version=f"py-extended-types {_version()}"
@@ -100,7 +100,7 @@ def _build_parser() -> argparse.ArgumentParser:
     check_parser = subcommands.add_parser(
         "check",
         parents=[common],
-        help="verify every @expect_shape declaration under PATHS",
+        help="verify every @assert_shape declaration under PATHS",
     )
     check_parser.add_argument("paths", nargs="*", default=["."], type=Path)
     check_parser.add_argument(
@@ -224,7 +224,7 @@ def _discover(paths: list[Path], sources: dict[Path, str]) -> Iterator[Path]:
                         source = file.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError):
                         continue
-                if "expect_shape(" in source and "py_extended_types" in source:
+                if "assert_shape(" in source and "py_extended_types" in source:
                     yield file
 
 

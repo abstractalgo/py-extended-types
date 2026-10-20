@@ -1,8 +1,8 @@
 {
   "name": "py-extended-types",
   "displayName": "py-extended-types",
-  "description": "Shows py-extended-types @expect_shape contract errors as diagnostics while you type, with quick fixes.",
-  "version": "0.4.0",
+  "description": "Shows py-extended-types @assert_shape contract errors as diagnostics while you type, with quick fixes.",
+  "version": "0.4.1",
   "publisher": "primer",
   "repository": {
     "type": "git",

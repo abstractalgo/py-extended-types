@@ -1,6 +1,6 @@
-"""`@expect_shape` contracts for Python classes, with shape helpers built on `Map` / `Filter`."""
+"""`@assert_shape` contracts for Python classes, with shape helpers built on `Map` / `Filter`."""
 
-from py_extended_types.core import Problem, check, expect_shape, registrations
+from py_extended_types.core import Problem, assert_shape, check, registrations
 from py_extended_types.shapes import (
     HAS_DEFAULT,
     NO_DEFAULT,
@@ -42,8 +42,8 @@ __all__ = [
     "Shape",
     "ShapeError",
     "add_none",
+    "assert_shape",
     "check",
-    "expect_shape",
     "includes_none",
     "is_assignable",
     "is_equivalent",

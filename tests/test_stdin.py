@@ -20,11 +20,11 @@ CONTRACTS = textwrap.dedent(
     """
     from pydantic import BaseModel
 
-    from py_extended_types import Partial, expect_shape
+    from py_extended_types import Partial, assert_shape
     from stdin_base import User
 
 
-    @expect_shape(Partial(User))
+    @assert_shape(Partial(User))
     class Patch(BaseModel):
         id: int | None = None
         name: str | None = None

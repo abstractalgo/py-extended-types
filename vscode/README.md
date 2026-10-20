@@ -1,6 +1,6 @@
 # py-extended-types for VS Code
 
-Shows [py-extended-types](../README.md) `@expect_shape` contract errors as
+Shows [py-extended-types](../README.md) `@assert_shape` contract errors as
 diagnostics (Problems panel + squiggles on the offending field), with quick fixes
 (the gutter lightbulb / `Cmd+.`):
 
@@ -71,7 +71,7 @@ and install a package:
 
 ```bash
 npm run package
-code --install-extension py-extended-types-0.4.0.vsix   # then "Developer: Reload Window"
+code --install-extension py-extended-types-0.4.1.vsix   # then "Developer: Reload Window"
 ```
 
 Requires the CLI's JSON output (`py-extended-types check --format json`, report `version: 1`).

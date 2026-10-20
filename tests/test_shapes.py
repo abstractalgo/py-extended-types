@@ -9,8 +9,8 @@ from py_extended_types import (
     Pick,
     Required,
     ShapeError,
+    assert_shape,
     core,
-    expect_shape,
 )
 from py_extended_types.core import Registration, check, registrations
 
@@ -60,12 +60,12 @@ def test_required_undoes_partial() -> None:
 
 
 def test_required_class_matches_without_none() -> None:
-    @expect_shape(Required(Pick(User, "id", "nickname")))
+    @assert_shape(Required(Pick(User, "id", "nickname")))
     class Strict(BaseModel):
         id: int
         nickname: str
 
-    @expect_shape(Required(Pick(User, "nickname")))
+    @assert_shape(Required(Pick(User, "nickname")))
     class StillNullable(BaseModel):
         nickname: str | None
 
@@ -90,7 +90,7 @@ def test_unknown_key_is_reported_lazily() -> None:
 
 
 def test_partial_user_matches() -> None:
-    @expect_shape(Partial(User))
+    @assert_shape(Partial(User))
     class PartialUser(BaseModel):
         id: int | None = None
         name: str | None = None
@@ -102,7 +102,7 @@ def test_partial_user_matches() -> None:
 
 
 def test_missing_optional_field_is_reported() -> None:
-    @expect_shape(Partial(User))
+    @assert_shape(Partial(User))
     class UserPatch(BaseModel):
         id: int | None = None
         name: str | None = None
@@ -115,7 +115,7 @@ def test_missing_optional_field_is_reported() -> None:
 
 
 def test_required_field_where_partial_expects_optional_is_reported() -> None:
-    @expect_shape(Partial(Pick(User, "id", "name")))
+    @assert_shape(Partial(Pick(User, "id", "name")))
     class Patch(BaseModel):
         id: int | None
         name: str
@@ -128,7 +128,7 @@ def test_required_field_where_partial_expects_optional_is_reported() -> None:
 
 
 def test_reports_type_mismatch_missing_and_extra_fields() -> None:
-    @expect_shape(Omit(User, "id"))
+    @assert_shape(Omit(User, "id"))
     class CreateUser(BaseModel):
         name: int
         nickname: str | None = None
@@ -143,7 +143,7 @@ def test_reports_type_mismatch_missing_and_extra_fields() -> None:
 
 
 def test_extra_allow_permits_additional_fields() -> None:
-    @expect_shape(Pick(User, "id"), extra="allow")
+    @assert_shape(Pick(User, "id"), extra="allow")
     class UserWithMeta(BaseModel):
         id: int
         meta: dict[str, str]
@@ -152,7 +152,7 @@ def test_extra_allow_permits_additional_fields() -> None:
 
 
 def test_required_field_with_default_is_rejected() -> None:
-    @expect_shape(Pick(User, "name"))
+    @assert_shape(Pick(User, "name"))
     class Named(BaseModel):
         name: str = "anon"
 
@@ -162,7 +162,7 @@ def test_required_field_with_default_is_rejected() -> None:
 
 
 def test_narrower_types_do_not_match() -> None:
-    @expect_shape(Pick(User, "name", "id"))
+    @assert_shape(Pick(User, "name", "id"))
     class Narrow(BaseModel):
         name: Literal["a", "b"]
         id: bool
@@ -174,7 +174,7 @@ def test_narrower_types_do_not_match() -> None:
 
 
 def test_annotated_metadata_is_ignored() -> None:
-    @expect_shape(Pick(User, "name"))
+    @assert_shape(Pick(User, "name"))
     class Named(BaseModel):
         name: Annotated[str, Field(min_length=1)]
 
@@ -187,7 +187,7 @@ def test_decorator_is_a_no_op_outside_the_cli(monkeypatch: pytest.MonkeyPatch) -
     before = len(registrations())
 
     # When
-    @expect_shape(Pick(User, "id"))
+    @assert_shape(Pick(User, "id"))
     class Bad(BaseModel):
         id: str
 

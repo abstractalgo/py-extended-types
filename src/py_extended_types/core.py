@@ -44,13 +44,13 @@ class Problem:
 
 
 _REGISTRY: list[Registration] = []
-# Off in the running app, so `@expect_shape` costs nothing there; `py-extended-types check` turns it on
+# Off in the running app, so `@assert_shape` costs nothing there; `py-extended-types check` turns it on
 # before importing anything.
 _collecting = False
 
 
 def start_collecting() -> None:
-    """Make `@expect_shape` record declarations from now on (the CLI calls this)."""
+    """Make `@assert_shape` record declarations from now on (the CLI calls this)."""
     global _collecting
     _collecting = True
 
@@ -63,7 +63,7 @@ def _unchanged(cls: _C) -> _C:
     return cls
 
 
-def expect_shape(
+def assert_shape(
     target: ShapeLike, /, *, extra: Extra = "forbid"
 ) -> Callable[[_C], _C]:
     """Declare that the decorated class has exactly the fields of `target`.

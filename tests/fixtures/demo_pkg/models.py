@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from py_extended_types import Omit, Partial, expect_shape
+from py_extended_types import Omit, Partial, assert_shape
 
 
 class User(BaseModel):
@@ -8,12 +8,12 @@ class User(BaseModel):
     name: str
 
 
-@expect_shape(Partial(User))
+@assert_shape(Partial(User))
 class PartialUser(BaseModel):
     id: int | None = None
     name: str | None = None
 
 
-@expect_shape(Omit(User, "id"))
+@assert_shape(Omit(User, "id"))
 class CreateUser(BaseModel):
     name: int

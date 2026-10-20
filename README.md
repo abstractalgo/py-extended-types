@@ -1,6 +1,6 @@
 # py-extended-types
 
-`@expect_shape` contracts for Python classes (Pydantic models, dataclasses, TypedDicts,
+`@assert_shape` contracts for Python classes (Pydantic models, dataclasses, TypedDicts,
 annotated classes): declare that a class has exactly the fields of another, or of
 a `Partial` / `Required` / `Omit` / `Pick` of it.
 
@@ -8,18 +8,18 @@ This repo holds the Python package (`src/`, `tests/`) and its VS Code extension
 ([`vscode/`](vscode/README.md)), which shows the checker's problems and quick fixes in the editor.
 
 ```python
-from py_extended_types import Omit, Partial, Pick, Required, expect_shape
+from py_extended_types import Omit, Partial, Pick, Required, assert_shape
 
-@expect_shape(Partial(User))
+@assert_shape(Partial(User))
 class UserPatch(BaseModel):
     id: int | None = None
     name: str | None = None
 
-@expect_shape(Omit(User, "id", "created_at"))
+@assert_shape(Omit(User, "id", "created_at"))
 class CreateUser(BaseModel): ...
 ```
 
-`@expect_shape` does nothing at runtime; `py-extended-types check` verifies it:
+`@assert_shape` does nothing at runtime; `py-extended-types check` verifies it:
 
 ```
 $ py-extended-types check src/
@@ -84,7 +84,7 @@ receive a `Member` for each field:
 | `replace(...)` | a copy with `annotation`, `quals`, `default` or `field` changed |
 
 ```python
-from py_extended_types import Filter, Map, Partial, add_none, expect_shape, is_assignable
+from py_extended_types import Filter, Map, Partial, add_none, assert_shape, is_assignable
 
 def Nullable(T):  # `T | None`, still required
     return Map(T, lambda m: m.replace(annotation=add_none(m.annotation)), name="Nullable")
@@ -92,7 +92,7 @@ def Nullable(T):  # `T | None`, still required
 Public = Filter(User, lambda m: not m.field.get("exclude"), name="Public[User]")
 Strings = Filter(User, lambda m: is_assignable(m.annotation, str))
 
-@expect_shape(Partial(Public))
+@assert_shape(Partial(Public))
 class UserPatch(BaseModel): ...
 ```
 
@@ -112,7 +112,7 @@ A class matches a shape when:
   a default here, and a required one must not have one,
 - there are **no extra fields** (`extra="allow"` to permit them).
 
-py-extended-types is a dev-time tool only: in the running app `@expect_shape` returns the class
+py-extended-types is a dev-time tool only: in the running app `@assert_shape` returns the class
 untouched and records nothing, and shapes are lazy, so no fields are read and no `Map` /
 `Filter` function is called. Only `py-extended-types check` (which switches collection on before
 importing your modules) gathers and verifies the declarations.
@@ -120,7 +120,7 @@ importing your modules) gathers and verifies the declarations.
 ## CLI
 
 ```
-py-extended-types check [PATHS...] [-v]           # verify @expect_shape declarations in PATHS (default .); -v prints a summary on success
+py-extended-types check [PATHS...] [-v]           # verify @assert_shape declarations in PATHS (default .); -v prints a summary on success
 py-extended-types show 'pkg.mod:Partial(User)'    # print a class's / shape's fields
 ```
 
@@ -128,7 +128,7 @@ The checker imports your modules, so it runs under **your project's**
 interpreter: `--python`, else `$VIRTUAL_ENV`, else the nearest `.venv`. It puts
 this package on `PYTHONPATH` (it has no dependencies), so the project doesn't
 need it installed just to run the check. `--no-venv` disables this. Only files
-mentioning both `expect_shape(` and `py_extended_types` are imported.
+mentioning both `assert_shape(` and `py_extended_types` are imported.
 
 ## Development
 
