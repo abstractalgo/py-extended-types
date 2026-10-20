@@ -334,8 +334,11 @@ class WithProperty:
     ("target", "reason"),
     [
         (Readable, "its metaclass _ProtocolMeta may store fields its own way"),
-        (Slotted, "field 'id' is a member_descriptor, not a plain default"),
-        (WithProperty, "field 'id' is a property, not a plain default"),
+        (
+            Slotted,
+            r"field 'id' is a descriptor \(member_descriptor\), not a plain default",
+        ),
+        (WithProperty, r"field 'id' is a descriptor \(property\), not a plain default"),
     ],
 )
 def test_classes_that_cant_be_read_reliably_are_shape_errors(

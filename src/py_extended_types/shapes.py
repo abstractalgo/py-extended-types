@@ -474,8 +474,8 @@ def _plain_class_defaults(cls: type) -> dict[str, Any]:
         default = _class_default(cls, name)
         if hasattr(type(default), "__get__"):
             raise ShapeError(
-                f"{unsupported}: field '{name}' is a {type(default).__qualname__}, not a plain "
-                f"default; py-extended-types supports {SUPPORTED_KINDS}"
+                f"{unsupported}: field '{name}' is a descriptor ({type(default).__qualname__}), "
+                f"not a plain default; py-extended-types supports {SUPPORTED_KINDS}"
             )
         defaults[name] = default
     return defaults
