@@ -398,18 +398,16 @@ def _format_keys(keys: tuple[str, ...]) -> str:
     return " | ".join(repr(key) for key in keys)
 
 
-SUPPORTED_KINDS = (
-    "Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs classes"
-)
+SUPPORTED_KINDS = "Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs classes and plain classes"
 
 
 def fields_of(cls: type) -> dict[str, Member]:
-    """Extract the fields of a Pydantic model, dataclass, TypedDict, NamedTuple or attrs class.
+    """Extract the fields of a Pydantic model, dataclass, TypedDict, NamedTuple, attrs class
+    or plain class (see `_plain_class_defaults`).
 
     Raises:
         ShapeError: for any other class. Each kind stores its fields and defaults in its
-            own way, so guessing (e.g. treating every class attribute as a default) would
-            misread classes such as SQLAlchemy models.
+            own way, so guessing would misread e.g. SQLAlchemy models.
     """
     model_fields = _pydantic_fields(cls)
     if model_fields is not None:
@@ -452,9 +450,42 @@ def fields_of(cls: type) -> dict[str, Member]:
             cls,
             {attribute.name: _attrs_default(attribute) for attribute in attrs_fields},
         )
-    raise ShapeError(
-        f"can't read the fields of {_class_name(cls)}: py-extended-types supports {SUPPORTED_KINDS}"
-    )
+    return _members(cls, _plain_class_defaults(cls))
+
+
+def _plain_class_defaults(cls: type) -> dict[str, Any]:
+    """Defaults of a plain class: its class-level values, so a field without one is required.
+
+    That reading only holds for classes no framework has processed, so it requires the
+    plain `type` metaclass (Pydantic, SQLAlchemy's declarative base, Protocol and Enum have
+    their own) and no descriptor in place of a field (NamedTuple accessors, SQLAlchemy's
+    mapped attributes, `__slots__` members, properties).
+    """
+    unsupported = f"can't read the fields of {_class_name(cls)}"
+    if type(cls) is not type:
+        raise ShapeError(
+            f"{unsupported}: its metaclass {type(cls).__qualname__} may store fields its own "
+            f"way; py-extended-types supports {SUPPORTED_KINDS}"
+        )
+    defaults: dict[str, Any] = {}
+    for name, annotation in _type_hints(cls).items():
+        if typing.get_origin(annotation) is typing.ClassVar:
+            continue
+        default = _class_default(cls, name)
+        if hasattr(type(default), "__get__"):
+            raise ShapeError(
+                f"{unsupported}: field '{name}' is a {type(default).__qualname__}, not a plain "
+                f"default; py-extended-types supports {SUPPORTED_KINDS}"
+            )
+        defaults[name] = default
+    return defaults
+
+
+def _class_default(cls: type, name: str) -> Any:
+    for klass in cls.__mro__:
+        if name in vars(klass):
+            return vars(klass)[name]
+    return NO_DEFAULT
 
 
 def _members(cls: type, defaults: Mapping[str, Any]) -> dict[str, Member]:

@@ -1,5 +1,13 @@
 import dataclasses
-from typing import Final, Literal, NamedTuple, NotRequired, Protocol, TypedDict
+from typing import (
+    ClassVar,
+    Final,
+    Literal,
+    NamedTuple,
+    NotRequired,
+    Protocol,
+    TypedDict,
+)
 
 import attrs
 import pytest
@@ -305,37 +313,73 @@ def test_members_of_namedtuples_and_attrs_classes() -> None:
     }
 
 
-class Plain:
-    id: int
-    name: str = ""
-
-
 class Readable(Protocol):
     id: int
 
 
-@pytest.mark.parametrize("target", [Plain, Readable])
-def test_unsupported_classes_are_shape_errors(target: type) -> None:
+class Slotted:
+    __slots__ = ("id",)
+    id: int
+
+
+class WithProperty:
+    id: int
+
+    @property  # type: ignore[no-redef]
+    def id(self) -> int:
+        return 1
+
+
+@pytest.mark.parametrize(
+    ("target", "reason"),
+    [
+        (Readable, "its metaclass _ProtocolMeta may store fields its own way"),
+        (Slotted, "field 'id' is a member_descriptor, not a plain default"),
+        (WithProperty, "field 'id' is a property, not a plain default"),
+    ],
+)
+def test_classes_that_cant_be_read_reliably_are_shape_errors(
+    target: type, reason: str
+) -> None:
     # Given
     shape = Partial(target)
 
     # When / Then
     with pytest.raises(
-        ShapeError,
-        match=f"can't read the fields of {target.__qualname__}: .*supports Pydantic",
+        ShapeError, match=f"can't read the fields of {target.__qualname__}: {reason}"
     ):
         _ = shape.fields
 
 
-def test_unsupported_decorated_class_is_reported() -> None:
-    @assert_shape(Pick(User, "id"))
+def test_members_of_plain_classes() -> None:
+    # Given
+    class Base:
+        id: int
+        kind: ClassVar[str] = "base"
+
+    class Plain(Base):
+        name: str = ""
+        tags: list[str] | None = None
+
+    # When
+    fields = Map(Plain, lambda member: member).fields
+
+    # Then
+    assert fields == {
+        "id": Member("id", int),
+        "name": Member("name", str, default=""),
+        "tags": Member("tags", list[str] | None, default=None),
+    }
+
+
+def test_plain_decorated_class_is_checked() -> None:
+    @assert_shape(Pick(User, "id", "email"))
     class Untyped:
         id: int
+        email: str | None
 
     assert _problems(Untyped) == [
-        "invalid-shape: can't read the fields of "
-        "test_unsupported_decorated_class_is_reported.<locals>.Untyped: py-extended-types supports "
-        "Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs classes"
+        "required-mismatch: Untyped.email is optional in Pick[User, 'id' | 'email'] and needs a default"
     ]
 
 

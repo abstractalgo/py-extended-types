@@ -3,10 +3,13 @@
 `@assert_shape` contracts for Python classes: declare that a class has exactly the
 fields of another, or of a `Partial` / `Required` / `Omit` / `Pick` of it.
 
-Supported classes are Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs
-classes, on either side of the contract. Any other class (a plain annotated class, a
-SQLAlchemy model, a `Protocol`) is reported as `invalid-shape` rather than guessed at,
-because each kind stores its fields and defaults differently.
+Supported classes are Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs
+classes and plain annotated classes, on either side of the contract. In a plain class, a
+field with a class-level value has that default and one without is required (`ClassVar`s
+are skipped). Classes these rules can't read reliably are reported as `invalid-shape`
+rather than guessed at: anything with its own metaclass (SQLAlchemy's declarative base,
+`Protocol`, `Enum`) or with a descriptor in place of a field (SQLAlchemy-mapped classes,
+`__slots__`, properties).
 
 This repo holds the Python package (`src/`, `tests/`) and its VS Code extension
 ([`vscode/`](vscode/README.md)), which shows the checker's problems and quick fixes in the editor.
