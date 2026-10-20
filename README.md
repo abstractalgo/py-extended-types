@@ -55,15 +55,9 @@ see the unsaved version too).
 
 Helpers compose: `Partial(Omit(User, "id"))`.
 
-```python
-Scores = Record(Literal["da", "ne"], float)                    # {da: float, ne: float}
-Mixed = Record(["id", "label"], lambda key: str if key == "label" else int)
-Flags = Record(KeyOf(User), bool)                              # a bool per User field
-```
+## Your own helpers: `Map` and `Filter`
 
-### Your own helpers: `Map` and `Filter`
-
-The four helpers above are built from two primitives, which you can use too:
+`Partial`, `Required`, `Pick` and `Omit` are built from two primitives, which you can use too:
 
 | Primitive | Effect |
 | --- | --- |
@@ -100,7 +94,7 @@ class UserPatch(BaseModel): ...
 exported for use in these functions. An exception raised in one is reported as an
 `invalid-shape` problem.
 
-### Matching
+## Matching
 
 A class matches a shape when:
 
@@ -116,6 +110,179 @@ py-extended-types is a dev-time tool only: in the running app `@assert_shape` re
 untouched and records nothing, and shapes are lazy, so no fields are read and no `Map` /
 `Filter` function is called. Only `py-extended-types check` (which switches collection on before
 importing your modules) gathers and verifies the declarations.
+
+## Examples
+
+Every example uses this model, and each class below passes `py-extended-types check`:
+
+```python
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from py_extended_types import (
+    Filter, KeyOf, Map, Omit, Partial, Pick, Record, Required, add_none, assert_shape,
+)
+
+class User(BaseModel):
+    id: int
+    name: str
+    email: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    password: str = Field(exclude=True)
+```
+
+### `Partial`
+
+Every field becomes optional and nullable, the usual shape of a PATCH body:
+
+```python
+@assert_shape(Partial(User))
+class UserPatch(BaseModel):
+    id: int | None = None
+    name: str | None = None
+    email: str | None = None
+    tags: list[str] | None = None
+    password: str | None = None
+```
+
+With `nullable=False`, fields only need a default and keep their types:
+
+```python
+@assert_shape(Partial(User, nullable=False))
+class UserDefaults(BaseModel):
+    id: int = 0
+    name: str = ""
+    email: str | None = None
+    tags: list[str] = []
+    password: str = ""
+```
+
+### `Required`
+
+Every field becomes required, and `None` is removed from its type:
+
+```python
+@assert_shape(Required(User))
+class CompleteUser(BaseModel):
+    id: int
+    name: str
+    email: str  # was `str | None = None`
+    tags: list[str]
+    password: str
+```
+
+### `Pick`
+
+Only the listed fields are kept, with their types and defaults:
+
+```python
+@assert_shape(Pick(User, "id", "name"))
+class UserSummary(BaseModel):
+    id: int
+    name: str
+```
+
+### `Omit`
+
+The listed fields are dropped; everything else stays as it is:
+
+```python
+@assert_shape(Omit(User, "id"))
+class CreateUser(BaseModel):
+    name: str
+    email: str | None = None
+    tags: list[str] = []
+    password: str
+```
+
+`Pick` and `Omit` report a misspelled key (`Omit(User, "idd")`) as `invalid-shape`, listing
+the fields that do exist.
+
+### `Record`
+
+One required field per key, all of the same type:
+
+```python
+@assert_shape(Record(Literal["en", "de"], str))
+class Translations(BaseModel):
+    en: str
+    de: str
+```
+
+Or with a function that picks each field's type from its key:
+
+```python
+@assert_shape(Record(["count", "label"], lambda key: str if key == "label" else int))
+class Counter(BaseModel):
+    count: int
+    label: str
+```
+
+### `KeyOf`
+
+Another class's (or shape's) field names, as keys for `Record`:
+
+```python
+@assert_shape(Record(KeyOf(Omit(User, "password")), bool))
+class UserFieldVisibility(BaseModel):
+    id: bool
+    name: bool
+    email: bool
+    tags: bool
+```
+
+`KeyOf(User).literal` gives `Literal['id', 'name', 'email', 'tags', 'password']`, read when
+you access it.
+
+### `Map`
+
+Changes every field with a function of its `Member`. Here each type gets `| None`, but
+required fields stay required:
+
+```python
+Nullable = Map(User, lambda m: m.replace(annotation=add_none(m.annotation)), name="Nullable[User]")
+
+@assert_shape(Nullable)
+class NullableUser(BaseModel):
+    id: int | None
+    name: str | None
+    email: str | None = None
+    tags: list[str] | None = []
+    password: str | None
+```
+
+### `Filter`
+
+Keeps the fields its predicate accepts. Here it drops fields excluded from serialization:
+
+```python
+Public = Filter(User, lambda m: not m.field.get("exclude"), name="Public[User]")
+
+@assert_shape(Public)
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str | None = None
+    tags: list[str] = []
+```
+
+### Composing
+
+Each helper accepts a class or another helper's result:
+
+```python
+@assert_shape(Partial(Omit(User, "id", "password")))
+class ProfilePatch(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    tags: list[str] | None = None
+```
+
+`py-extended-types show 'app.models:Partial(Omit(User, "id"))'` prints the fields of any of
+these shapes. In VS Code, Pylance doesn't autocomplete inside a class decorator's
+arguments, so write shapes that use a `lambda` as module-level variables (like `Nullable`
+and `Public` above) to get completions for `m`.
 
 ## CLI
 
