@@ -1,10 +1,10 @@
-"""`py-sat` command line.
+"""`py-extended-types` command line.
 
 The checker must import the user's modules, which need the user's dependencies,
 so when installed as a standalone tool (`uv tool install`) it re-executes itself
 under the target project's interpreter (`--python`, `$VIRTUAL_ENV`, or the
 nearest `.venv`), putting this package on `PYTHONPATH`. That works because
-`py_sat` has no dependencies of its own.
+`py_extended_types` has no dependencies of its own.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-import py_sat
-from py_sat import overrides
-from py_sat.core import check, registrations, start_collecting
-from py_sat.report import (
+import py_extended_types
+from py_extended_types import overrides
+from py_extended_types.core import check, registrations, start_collecting
+from py_extended_types.report import (
     Diagnostic,
     diagnostics_for,
     import_failure,
@@ -30,10 +30,10 @@ from py_sat.report import (
     render_stylish,
     use_color,
 )
-from py_sat.shapes import Shape, ShapeError, as_shape
-from py_sat.typecheck import format_type
+from py_extended_types.shapes import Shape, ShapeError, as_shape
+from py_extended_types.typecheck import format_type
 
-CHILD_ENV_VAR = "PY_SAT_CHILD"
+CHILD_ENV_VAR = "PY_EXTENDED_TYPES_CHILD"
 SKIP_DIRS = frozenset(
     {
         ".git",
@@ -79,17 +79,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="py-sat",
+        prog="py-extended-types",
         description="Verify `@expect_shape` contracts between Python classes.",
     )
-    parser.add_argument("--version", action="version", version=f"py-sat {_version()}")
+    parser.add_argument(
+        "--version", action="version", version=f"py-extended-types {_version()}"
+    )
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--python",
         help="interpreter to import the project with (default: $VIRTUAL_ENV or nearest .venv)",
     )
     common.add_argument(
-        "--no-venv", action="store_true", help="run in py-sat's own interpreter"
+        "--no-venv",
+        action="store_true",
+        help="run in py-extended-types's own interpreter",
     )
     subcommands = parser.add_subparsers(dest="command")
 
@@ -129,7 +133,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _version() -> str:
     try:
-        return version("py-sat")
+        return version("py-extended-types")
     except PackageNotFoundError:
         return "unknown"
 
@@ -155,13 +159,13 @@ def _is_current_interpreter(python: Path) -> bool:
 
 
 def _reexec(python: Path, args: list[str]) -> int:
-    package_root = str(Path(py_sat.__file__).resolve().parent.parent)
+    package_root = str(Path(py_extended_types.__file__).resolve().parent.parent)
     env = dict(os.environ)
     env[CHILD_ENV_VAR] = "1"
     env["PYTHONPATH"] = os.pathsep.join(
         filter(None, [package_root, env.get("PYTHONPATH")])
     )
-    return subprocess.call([str(python), "-m", "py_sat", *args], env=env)
+    return subprocess.call([str(python), "-m", "py_extended_types", *args], env=env)
 
 
 def _run_check(
@@ -220,7 +224,7 @@ def _discover(paths: list[Path], sources: dict[Path, str]) -> Iterator[Path]:
                         source = file.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError):
                         continue
-                if "expect_shape(" in source and "py_sat" in source:
+                if "expect_shape(" in source and "py_extended_types" in source:
                     yield file
 
 
@@ -270,5 +274,7 @@ def _evaluate_target(target: str) -> Shape:
     sys.path.insert(0, str(Path.cwd()))
     module = importlib.import_module(module_name)
     namespace: dict[str, Any] = dict(vars(module))
-    namespace.update({name: getattr(py_sat, name) for name in py_sat.__all__})
+    namespace.update(
+        {name: getattr(py_extended_types, name) for name in py_extended_types.__all__}
+    )
     return as_shape(eval(expression, namespace))  # noqa: S307 - developer-supplied expression

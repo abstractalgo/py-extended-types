@@ -5,8 +5,15 @@ import sys
 from collections.abc import Callable
 from typing import Literal, TypeVar
 
-from py_sat.shapes import Member, Shape, ShapeError, ShapeLike, as_shape, fields_of
-from py_sat.typecheck import format_type, is_equivalent
+from py_extended_types.shapes import (
+    Member,
+    Shape,
+    ShapeError,
+    ShapeLike,
+    as_shape,
+    fields_of,
+)
+from py_extended_types.typecheck import format_type, is_equivalent
 
 _C = TypeVar("_C", bound=type)
 
@@ -37,7 +44,7 @@ class Problem:
 
 
 _REGISTRY: list[Registration] = []
-# Off in the running app, so `@expect_shape` costs nothing there; `py-sat check` turns it on
+# Off in the running app, so `@expect_shape` costs nothing there; `py-extended-types check` turns it on
 # before importing anything.
 _collecting = False
 
@@ -66,7 +73,7 @@ def expect_shape(
     required-ness (a default on one side means a default on the other).
 
     This is a dev-time contract: in the running app the decorator returns the class
-    untouched and records nothing. Only `py-sat check` collects and verifies it.
+    untouched and records nothing. Only `py-extended-types check` collects and verifies it.
 
     Args:
         target: a class, or a shape such as `Partial(User)` / `Omit(User, "id")`.

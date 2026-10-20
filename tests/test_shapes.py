@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Optional
 import pytest
 from pydantic import BaseModel, Field
 
-from py_sat import (
+from py_extended_types import (
     Omit,
     Partial,
     Pick,
@@ -12,7 +12,7 @@ from py_sat import (
     core,
     expect_shape,
 )
-from py_sat.core import Registration, check, registrations
+from py_extended_types.core import Registration, check, registrations
 
 
 class User(BaseModel):

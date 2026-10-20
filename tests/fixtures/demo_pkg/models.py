@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from py_sat import Omit, Partial, expect_shape
+from py_extended_types import Omit, Partial, expect_shape
 
 
 class User(BaseModel):

@@ -1,5 +1,5 @@
 from demo_pkg.models import User
-from py_sat import expect_shape
+from py_extended_types import expect_shape
 
 
 @expect_shape(User)

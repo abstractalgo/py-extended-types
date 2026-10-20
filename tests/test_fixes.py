@@ -9,7 +9,7 @@ MODELS = textwrap.dedent(
     '''
     from pydantic import BaseModel, Field
 
-    from py_sat import Omit, Partial, expect_shape
+    from py_extended_types import Omit, Partial, expect_shape
 
 
     class User(BaseModel):
@@ -43,7 +43,16 @@ MODELS = textwrap.dedent(
 
 def _check(directory: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        [sys.executable, "-m", "py_sat", "check", "--no-venv", "--format", "json", "."],
+        [
+            sys.executable,
+            "-m",
+            "py_extended_types",
+            "check",
+            "--no-venv",
+            "--format",
+            "json",
+            ".",
+        ],
         cwd=directory,
         capture_output=True,
         text=True,
@@ -104,7 +113,7 @@ def test_applying_every_fix_makes_the_file_match(tmp_path: Path) -> None:
         '''
         from pydantic import BaseModel, Field
 
-        from py_sat import Omit, Partial, expect_shape
+        from py_extended_types import Omit, Partial, expect_shape
 
 
         class User(BaseModel):

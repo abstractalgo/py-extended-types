@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal, Optional
 
 import pytest
 
-from py_sat.typecheck import format_type, is_assignable
+from py_extended_types.typecheck import format_type, is_assignable
 
 
 @pytest.mark.parametrize(

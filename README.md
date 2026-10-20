@@ -1,11 +1,14 @@
-# py-sat
+# py-extended-types
 
 `@expect_shape` contracts for Python classes (Pydantic models, dataclasses, TypedDicts,
 annotated classes): declare that a class has exactly the fields of another, or of
 a `Partial` / `Required` / `Omit` / `Pick` of it.
 
+This repo holds the Python package (`src/`, `tests/`) and its VS Code extension
+([`vscode/`](vscode/README.md)), which shows the checker's problems and quick fixes in the editor.
+
 ```python
-from py_sat import Omit, Partial, Pick, Required, expect_shape
+from py_extended_types import Omit, Partial, Pick, Required, expect_shape
 
 @expect_shape(Partial(User))
 class UserPatch(BaseModel):
@@ -16,13 +19,13 @@ class UserPatch(BaseModel):
 class CreateUser(BaseModel): ...
 ```
 
-`@expect_shape` does nothing at runtime; `py-sat check` verifies it:
+`@expect_shape` does nothing at runtime; `py-extended-types check` verifies it:
 
 ```
-$ py-sat check src/
+$ py-extended-types check src/
 src/app/models.py
-  15:1  error  CreateUser is missing required field 'email: str' from Omit[User, 'id']  py-sat(missing-field)
-  17:5  error  CreateUser.name has type 'int', expected 'str'                         py-sat(type-mismatch)
+  15:1  error  CreateUser is missing required field 'email: str' from Omit[User, 'id']  py-extended-types(missing-field)
+  17:5  error  CreateUser.name has type 'int', expected 'str'                         py-extended-types(type-mismatch)
 
 ✖ 2 problems (2 errors, 0 warnings)
 ```
@@ -81,7 +84,7 @@ receive a `Member` for each field:
 | `replace(...)` | a copy with `annotation`, `quals`, `default` or `field` changed |
 
 ```python
-from py_sat import Filter, Map, Partial, add_none, expect_shape, is_assignable
+from py_extended_types import Filter, Map, Partial, add_none, expect_shape, is_assignable
 
 def Nullable(T):  # `T | None`, still required
     return Map(T, lambda m: m.replace(annotation=add_none(m.annotation)), name="Nullable")
@@ -109,23 +112,23 @@ A class matches a shape when:
   a default here, and a required one must not have one,
 - there are **no extra fields** (`extra="allow"` to permit them).
 
-py-sat is a dev-time tool only: in the running app `@expect_shape` returns the class
+py-extended-types is a dev-time tool only: in the running app `@expect_shape` returns the class
 untouched and records nothing, and shapes are lazy, so no fields are read and no `Map` /
-`Filter` function is called. Only `py-sat check` (which switches collection on before
+`Filter` function is called. Only `py-extended-types check` (which switches collection on before
 importing your modules) gathers and verifies the declarations.
 
 ## CLI
 
 ```
-py-sat check [PATHS...] [-v]           # verify @expect_shape declarations in PATHS (default .); -v prints a summary on success
-py-sat show 'pkg.mod:Partial(User)'    # print a class's / shape's fields
+py-extended-types check [PATHS...] [-v]           # verify @expect_shape declarations in PATHS (default .); -v prints a summary on success
+py-extended-types show 'pkg.mod:Partial(User)'    # print a class's / shape's fields
 ```
 
 The checker imports your modules, so it runs under **your project's**
 interpreter: `--python`, else `$VIRTUAL_ENV`, else the nearest `.venv`. It puts
 this package on `PYTHONPATH` (it has no dependencies), so the project doesn't
 need it installed just to run the check. `--no-venv` disables this. Only files
-mentioning both `expect_shape(` and `py_sat` are imported.
+mentioning both `expect_shape(` and `py_extended_types` are imported.
 
 ## Development
 
@@ -133,8 +136,8 @@ mentioning both `expect_shape(` and `py_sat` are imported.
 uv sync                                       # dev tools: pytest, ruff, mypy, pydantic
 uv run pytest
 uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src tests
-uv tool install --editable .                  # optional global `py-sat`
+uv tool install --editable .                  # optional global `py-extended-types`
 ```
 
 Projects using it can depend on this repo by path while developing it, e.g. with uv:
-`py-sat = { path = "../py-extended-types", editable = true }` under `[tool.uv.sources]`.
+`py-extended-types = { path = "../py-extended-types", editable = true }` under `[tool.uv.sources]`.

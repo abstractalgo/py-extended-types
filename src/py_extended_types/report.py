@@ -3,7 +3,7 @@
 Stylish groups problems per file, one aligned row each:
 
 path/to/models.py
-  12:5  error  User.name has type 'int', expected 'str'  py-sat(type-mismatch)
+  12:5  error  User.name has type 'int', expected 'str'  py-extended-types(type-mismatch)
 
 ✖ 1 problem (1 error, 0 warnings)
 """
@@ -22,9 +22,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from py_sat.core import Problem, Registration
-from py_sat.shapes import Member
-from py_sat.typecheck import format_type, includes_none
+from py_extended_types.core import Problem, Registration
+from py_extended_types.shapes import Member
+from py_extended_types.typecheck import format_type, includes_none
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ def diagnostics_for(
                 column,
                 line,
                 end_column,
-                f"py-sat({problem.rule})",
+                f"py-extended-types({problem.rule})",
                 problem.message,
                 _fix_for(problem, source, append_at),
             )
@@ -122,7 +122,7 @@ def import_failure(path: Path, error: BaseException) -> Diagnostic:
         column,
         end_line,
         end_column,
-        "py-sat(import-error)",
+        "py-extended-types(import-error)",
         message,
         origin=str(Path(origin[0]).resolve()) if origin is not None else None,
     )

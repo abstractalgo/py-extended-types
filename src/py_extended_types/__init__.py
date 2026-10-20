@@ -1,7 +1,7 @@
 """`@expect_shape` contracts for Python classes, with shape helpers built on `Map` / `Filter`."""
 
-from py_sat.core import Problem, check, expect_shape, registrations
-from py_sat.shapes import (
+from py_extended_types.core import Problem, check, expect_shape, registrations
+from py_extended_types.shapes import (
     HAS_DEFAULT,
     NO_DEFAULT,
     Factory,
@@ -17,7 +17,7 @@ from py_sat.shapes import (
     Shape,
     ShapeError,
 )
-from py_sat.typecheck import (
+from py_extended_types.typecheck import (
     add_none,
     includes_none,
     is_assignable,

@@ -1,0 +1,101 @@
+{
+  "name": "py-extended-types",
+  "displayName": "py-extended-types",
+  "description": "Shows py-extended-types @expect_shape contract errors as diagnostics while you type, with quick fixes.",
+  "version": "0.4.0",
+  "publisher": "primer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abstractalgo/py-extended-types",
+    "directory": "vscode"
+  },
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "workspaceContains:**/pyproject.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pyExtendedTypes.check",
+        "title": "Check Workspace",
+        "category": "py-extended-types"
+      },
+      {
+        "command": "pyExtendedTypes.restart",
+        "title": "Restart",
+        "category": "py-extended-types"
+      },
+      {
+        "command": "pyExtendedTypes.showOutput",
+        "title": "Show Output",
+        "category": "py-extended-types"
+      }
+    ],
+    "configuration": {
+      "title": "py-extended-types",
+      "properties": {
+        "pyExtendedTypes.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run py-extended-types and report its diagnostics.",
+          "scope": "resource"
+        },
+        "pyExtendedTypes.path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Command used to run py-extended-types, e.g. `[\"uv\", \"run\", \"--no-sync\", \"py-extended-types\"]`. When empty, uses `.venv/bin/py-extended-types` in the workspace folder if it exists, else `py-extended-types` from `PATH`.",
+          "scope": "resource"
+        },
+        "pyExtendedTypes.paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "."
+          ],
+          "markdownDescription": "Paths to check, relative to the workspace folder. The whole set is re-checked on every save, since a change to one model can break a contract declared in another file.",
+          "scope": "resource"
+        },
+        "pyExtendedTypes.run": {
+          "type": "string",
+          "enum": [
+            "onType",
+            "onSave"
+          ],
+          "enumDescriptions": [
+            "Re-check as you type (unsaved buffers are sent to py-extended-types) and on save.",
+            "Re-check only when a Python file is saved."
+          ],
+          "default": "onType",
+          "markdownDescription": "When to re-check. `onType` imports your unsaved code on every pause in typing, so use `onSave` for modules with side effects at import time.",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository --skip-license",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.6",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "3.2.1",
+    "typescript": "5.6.3"
+  }
+}

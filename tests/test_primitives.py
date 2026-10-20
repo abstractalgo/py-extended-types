@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly
 
-from py_sat import (
+from py_extended_types import (
     HAS_DEFAULT,
     NO_DEFAULT,
     Factory,
@@ -23,7 +23,7 @@ from py_sat import (
     expect_shape,
     is_assignable,
 )
-from py_sat.core import Registration, check, registrations
+from py_extended_types.core import Registration, check, registrations
 
 
 class User(BaseModel):

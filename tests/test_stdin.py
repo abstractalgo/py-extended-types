@@ -20,7 +20,7 @@ CONTRACTS = textwrap.dedent(
     """
     from pydantic import BaseModel
 
-    from py_sat import Partial, expect_shape
+    from py_extended_types import Partial, expect_shape
     from stdin_base import User
 
 
@@ -38,7 +38,7 @@ def _check(
     args = [
         sys.executable,
         "-m",
-        "py_sat",
+        "py_extended_types",
         "check",
         "--no-venv",
         "--format",
@@ -82,7 +82,7 @@ def test_unsaved_source_replaces_the_file_on_disk(tmp_path: Path) -> None:
     # Then
     assert [
         (d["line"], d["rule"], d["fix"]["edits"][0]["newText"]) for d in diagnostics
-    ] == [(12, "py-sat(type-mismatch)", "name: str | None = None")]
+    ] == [(12, "py-extended-types(type-mismatch)", "name: str | None = None")]
 
 
 def test_unsaved_base_model_affects_other_files(tmp_path: Path) -> None:
@@ -95,7 +95,7 @@ def test_unsaved_base_model_affects_other_files(tmp_path: Path) -> None:
 
     # Then
     assert [(Path(d["path"]).name, d["rule"]) for d in diagnostics] == [
-        ("stdin_contracts.py", "py-sat(missing-field)")
+        ("stdin_contracts.py", "py-extended-types(missing-field)")
     ]
 
 
@@ -109,5 +109,5 @@ def test_import_error_names_the_unsaved_file_it_came_from(tmp_path: Path) -> Non
 
     # Then
     assert [(Path(d["path"]).name, d["rule"], d["origin"]) for d in diagnostics] == [
-        ("stdin_contracts.py", "py-sat(import-error)", str(base.resolve()))
+        ("stdin_contracts.py", "py-extended-types(import-error)", str(base.resolve()))
     ]

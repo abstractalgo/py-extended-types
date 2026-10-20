@@ -5,7 +5,7 @@ derive one shape from another; `Partial`, `Required`, `Omit` and `Pick` are buil
 them, and project-specific helpers can be too.
 
 Every shape is lazy: building one only records the operation, and the fields (and any
-function passed to `Map` / `Filter`) are only computed when `py-sat check` asks for
+function passed to `Map` / `Filter`) are only computed when `py-extended-types check` asks for
 them. Decorating a class therefore runs none of this in the app, and mistakes such as
 omitting an unknown key surface as check problems rather than import errors.
 """
@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType
 from typing import Any, Literal
 
-from py_sat.typecheck import add_none, format_type, remove_none
+from py_extended_types.typecheck import add_none, format_type, remove_none
 
 
 class ShapeError(Exception):
@@ -275,7 +275,7 @@ def _with_known_keys(shape: Shape, base: Shape, keys: tuple[str, ...]) -> Shape:
 class KeyOf:
     """The field names of a class or shape, like TypeScript's `keyof T`, for `Record`'s keys.
 
-    Lazy like every shape: the names are only read when `py-sat check` needs them, which
+    Lazy like every shape: the names are only read when `py-extended-types check` needs them, which
     is why this isn't a `Literal` itself. `.literal` builds that `Literal["a", "b"]`.
     """
 

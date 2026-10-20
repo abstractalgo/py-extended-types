@@ -1,6 +1,6 @@
 [project]
-name = "py-sat"
-version = "0.1.0"
+name = "py-extended-types"
+version = "0.2.0"
 description = "TypeScript-style shape contracts (`@expect_shape`, Partial/Required/Pick/Omit/Record, Map/Filter) for Python classes"
 readme = "README.md"
 authors = [{ name = "Dragan Okanovic" }]
@@ -13,14 +13,18 @@ dependencies = []
 Repository = "https://github.com/abstractalgo/py-extended-types"
 
 [project.scripts]
-py-sat = "py_sat.cli:main"
+py-extended-types = "py_extended_types.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/py_sat"]
+packages = ["src/py_extended_types"]
+
+[tool.hatch.build.targets.sdist]
+# The VS Code extension lives in the same repo but isn't part of the Python package.
+exclude = ["vscode"]
 
 [dependency-groups]
 # The package itself has no dependencies; these are for its tests and linting.
