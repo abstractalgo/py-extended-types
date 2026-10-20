@@ -1,8 +1,12 @@
 # py-extended-types
 
-`@assert_shape` contracts for Python classes (Pydantic models, dataclasses, TypedDicts,
-annotated classes): declare that a class has exactly the fields of another, or of
-a `Partial` / `Required` / `Omit` / `Pick` of it.
+`@assert_shape` contracts for Python classes: declare that a class has exactly the
+fields of another, or of a `Partial` / `Required` / `Omit` / `Pick` of it.
+
+Supported classes are Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs
+classes, on either side of the contract. Any other class (a plain annotated class, a
+SQLAlchemy model, a `Protocol`) is reported as `invalid-shape` rather than guessed at,
+because each kind stores its fields and defaults differently.
 
 This repo holds the Python package (`src/`, `tests/`) and its VS Code extension
 ([`vscode/`](vscode/README.md)), which shows the checker's problems and quick fixes in the editor.

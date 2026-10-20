@@ -102,7 +102,10 @@ def check(registration: Registration) -> list[Problem]:
         expected = registration.shape.fields
     except ShapeError as error:
         return [Problem("invalid-shape", str(error))]
-    actual = fields_of(registration.cls)
+    try:
+        actual = fields_of(registration.cls)
+    except ShapeError as error:
+        return [Problem("invalid-shape", str(error))]
     problems: list[Problem] = []
 
     for name, want in expected.items():

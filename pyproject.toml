@@ -1,6 +1,6 @@
 [project]
 name = "py-extended-types"
-version = "0.3.0"
+version = "0.4.0"
 description = "TypeScript-style shape contracts (`@assert_shape`, Partial/Required/Pick/Omit/Record, Map/Filter) for Python classes"
 readme = "README.md"
 authors = [{ name = "Dragan Okanovic" }]
@@ -28,7 +28,14 @@ exclude = ["vscode"]
 
 [dependency-groups]
 # The package itself has no dependencies; these are for its tests and linting.
-dev = ["mypy", "pydantic>=2", "pytest", "ruff", "typing-extensions"]
+dev = [
+    "attrs>=26.1.0",
+    "mypy",
+    "pydantic>=2",
+    "pytest",
+    "ruff",
+    "typing-extensions",
+]
 
 [tool.ruff]
 target-version = "py311"

@@ -1,6 +1,7 @@
 import dataclasses
-from typing import Final, Literal, NotRequired, TypedDict
+from typing import Final, Literal, NamedTuple, NotRequired, Protocol, TypedDict
 
+import attrs
 import pytest
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly
@@ -274,3 +275,78 @@ def test_key_of_reads_nothing_until_checked() -> None:
     assert calls == []
     with pytest.raises(ShapeError, match="unknown field"):
         _ = shape.fields
+
+
+def test_members_of_namedtuples_and_attrs_classes() -> None:
+    # Given
+    class Pair(NamedTuple):
+        left: int
+        right: str = ""
+
+    @attrs.define
+    class Item:
+        sku: str
+        count: int = 0
+        tags: list[str] = attrs.Factory(list)
+
+    # When
+    pair = Map(Pair, lambda member: member).fields
+    item = Map(Item, lambda member: member).fields
+
+    # Then
+    assert pair == {
+        "left": Member("left", int),
+        "right": Member("right", str, default=""),
+    }
+    assert item == {
+        "sku": Member("sku", str),
+        "count": Member("count", int, default=0),
+        "tags": Member("tags", list[str], default=Factory(list)),
+    }
+
+
+class Plain:
+    id: int
+    name: str = ""
+
+
+class Readable(Protocol):
+    id: int
+
+
+@pytest.mark.parametrize("target", [Plain, Readable])
+def test_unsupported_classes_are_shape_errors(target: type) -> None:
+    # Given
+    shape = Partial(target)
+
+    # When / Then
+    with pytest.raises(
+        ShapeError,
+        match=f"can't read the fields of {target.__qualname__}: .*supports Pydantic",
+    ):
+        _ = shape.fields
+
+
+def test_unsupported_decorated_class_is_reported() -> None:
+    @assert_shape(Pick(User, "id"))
+    class Untyped:
+        id: int
+
+    assert _problems(Untyped) == [
+        "invalid-shape: can't read the fields of "
+        "test_unsupported_decorated_class_is_reported.<locals>.Untyped: py-extended-types supports "
+        "Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs classes"
+    ]
+
+
+def test_unresolvable_annotations_are_shape_errors() -> None:
+    # Given
+    @dataclasses.dataclass
+    class Forward:
+        other: "Missing"  # type: ignore[name-defined]  # noqa: F821
+
+    # When / Then
+    with pytest.raises(
+        ShapeError, match="can't resolve the annotations of .*Forward: NameError"
+    ):
+        _ = Partial(Forward).fields

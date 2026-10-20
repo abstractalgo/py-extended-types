@@ -398,11 +398,22 @@ def _format_keys(keys: tuple[str, ...]) -> str:
     return " | ".join(repr(key) for key in keys)
 
 
+SUPPORTED_KINDS = (
+    "Pydantic models, dataclasses, TypedDicts, NamedTuples and attrs classes"
+)
+
+
 def fields_of(cls: type) -> dict[str, Member]:
-    """Extract fields from a Pydantic model, dataclass, TypedDict or annotated class."""
-    quals = _qualifiers(cls)
+    """Extract the fields of a Pydantic model, dataclass, TypedDict, NamedTuple or attrs class.
+
+    Raises:
+        ShapeError: for any other class. Each kind stores its fields and defaults in its
+            own way, so guessing (e.g. treating every class attribute as a default) would
+            misread classes such as SQLAlchemy models.
+    """
     model_fields = _pydantic_fields(cls)
     if model_fields is not None:
+        quals = _qualifiers(cls)
         return {
             name: Member(
                 name=name,
@@ -414,38 +425,76 @@ def fields_of(cls: type) -> dict[str, Member]:
             for name, info in model_fields.items()
         }
 
-    hints = typing.get_type_hints(cls, include_extras=True)
-    if dataclasses.is_dataclass(cls):
-        return {
-            field.name: Member(
-                name=field.name,
-                annotation=_strip_qualifiers(hints.get(field.name, Any))[0],
-                quals=quals.get(field.name, frozenset()),
-                default=_dataclass_default(field),
-            )
-            for field in dataclasses.fields(cls)
-        }
     if typing.is_typeddict(cls):
         required_keys: frozenset[str] = getattr(cls, "__required_keys__", frozenset())
-        return {
-            name: Member(
-                name=name,
-                annotation=_strip_qualifiers(annotation)[0],
-                quals=quals.get(name, frozenset()),
-                default=NO_DEFAULT if name in required_keys else HAS_DEFAULT,
-            )
-            for name, annotation in hints.items()
-        }
-    return {
-        name: Member(
-            name=name,
-            annotation=_strip_qualifiers(annotation)[0],
-            quals=quals.get(name, frozenset()),
-            default=_class_default(cls, name),
+        return _members(
+            cls,
+            {
+                name: NO_DEFAULT if name in required_keys else HAS_DEFAULT
+                for name in _type_hints(cls)
+            },
         )
-        for name, annotation in hints.items()
-        if typing.get_origin(annotation) is not typing.ClassVar
-    }
+    if dataclasses.is_dataclass(cls):
+        return _members(
+            cls,
+            {
+                field.name: _dataclass_default(field)
+                for field in dataclasses.fields(cls)
+            },
+        )
+    if _is_namedtuple(cls):
+        names: tuple[str, ...] = getattr(cls, "_fields", ())
+        defaults: Mapping[str, Any] = getattr(cls, "_field_defaults", {})
+        return _members(cls, {name: defaults.get(name, NO_DEFAULT) for name in names})
+    attrs_fields = getattr(cls, "__attrs_attrs__", None)
+    if isinstance(attrs_fields, tuple):
+        return _members(
+            cls,
+            {attribute.name: _attrs_default(attribute) for attribute in attrs_fields},
+        )
+    raise ShapeError(
+        f"can't read the fields of {_class_name(cls)}: py-extended-types supports {SUPPORTED_KINDS}"
+    )
+
+
+def _members(cls: type, defaults: Mapping[str, Any]) -> dict[str, Member]:
+    """Members for the given field names (in order), typed from the class's annotations."""
+    hints = _type_hints(cls)
+    result = {}
+    for name, default in defaults.items():
+        annotation, quals = _strip_qualifiers(hints.get(name, Any))
+        result[name] = Member(
+            name=name, annotation=annotation, quals=quals, default=default
+        )
+    return result
+
+
+def _type_hints(cls: type) -> dict[str, Any]:
+    try:
+        return typing.get_type_hints(cls, include_extras=True)
+    except Exception as error:
+        raise ShapeError(
+            f"can't resolve the annotations of {_class_name(cls)}: {type(error).__name__}: {error}"
+        ) from error
+
+
+def _class_name(cls: object) -> str:
+    return getattr(cls, "__qualname__", None) or repr(cls)
+
+
+def _is_namedtuple(cls: type) -> bool:
+    return isinstance(cls, type) and issubclass(cls, tuple) and hasattr(cls, "_fields")
+
+
+def _attrs_default(attribute: Any) -> Any:
+    # Duck-typed like the Pydantic reader: `attrs.NOTHING` marks "no default", and
+    # `attrs.Factory(fn)` wraps a default factory.
+    default = attribute.default
+    if type(default).__name__ == "_Nothing":
+        return NO_DEFAULT
+    if type(default).__name__ == "Factory":
+        return Factory(default.factory)
+    return default
 
 
 def _pydantic_fields(cls: type) -> Mapping[str, Any] | None:
@@ -492,13 +541,6 @@ def _dataclass_default(field: dataclasses.Field[Any]) -> Any:
         return field.default
     if field.default_factory is not dataclasses.MISSING:
         return Factory(field.default_factory)
-    return NO_DEFAULT
-
-
-def _class_default(cls: type, name: str) -> Any:
-    for klass in cls.__mro__:
-        if name in vars(klass):
-            return vars(klass)[name]
     return NO_DEFAULT
 
 
