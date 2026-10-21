@@ -304,6 +304,67 @@ this package on `PYTHONPATH` (it has no dependencies), so the project doesn't
 need it installed just to run the check. `--no-venv` disables this. Only files
 mentioning both `assert_shape(` and `py_extended_types` are imported.
 
+## Limitations
+
+**Type checkers don't know about shapes.** mypy and Pylance see `Partial(User)` as an
+opaque `Shape` object, so they never report a mismatch and can't autocomplete or validate
+field names: `Pick(User, "nmae")` is only caught by `py-extended-types check`. Python's
+type system has no `keyof` or mapped types (PEP 827 proposes them), so this can't be fixed
+inside the library. In VS Code, Pylance also shows `Unknown` for names inside a class
+decorator's arguments; define shapes that use a `lambda` as module-level variables.
+
+**Checking runs your code.** The CLI imports every module it checks, which executes their
+top-level code with your project's interpreter. Modules with import-time side effects
+(connecting to services, reading required environment variables) run those too, and a
+module that fails to import is reported as `import-error` instead of being checked.
+
+**Only declarations that run on import are checked.** `@assert_shape` records a class when
+the decorator executes, so a class defined inside a function, or under
+`if TYPE_CHECKING:`, is never seen. Files are also skipped unless they contain both
+`assert_shape(` and `py_extended_types`, so re-exporting the decorator from another module
+of yours hides the files that use it.
+
+**Type comparison approximates mypy and pyright.**
+- Fields match only when their types are equivalent, i.e. each is assignable to the other.
+  `bool` doesn't match `int`, and `int` doesn't match `float`, even though a type checker
+  accepts either in place of the second.
+- `Any`, `TypeVar`s and forward references that can't be resolved match anything, so
+  generic fields aren't really checked.
+- `Protocol`s are compared by class, not structurally: a class that implements a protocol
+  doesn't match the protocol type.
+
+**Only names, types and required-ness are compared.**
+- Default values aren't compared: `x: int = 0` and `x: int = 1` match.
+- `Field(...)` arguments such as `alias` or `max_length` aren't compared (`Filter` and
+  `Map` can read them).
+- `Final` / `ReadOnly` qualifiers are recorded in `Member.quals` but not compared.
+- Field order doesn't matter.
+
+**Some classes can't be read.**
+- Supported: Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs classes and
+  plain annotated classes. Anything else is an `invalid-shape` problem, including
+  SQLAlchemy models, `Protocol`s and `Enum`s.
+- In a plain class, attributes assigned in `__init__` aren't fields, and a field whose
+  default is a function is rejected (functions are descriptors, like the ones frameworks
+  put in place of fields).
+- Pydantic's `Field(...)` arguments come from its private `FieldInfo._attributes_set`.
+  If a Pydantic release changes it, `Member.field` comes back empty.
+
+**Helpers can't rename fields.** `Map` changes a field's type, default or qualifiers but
+keeps its name, and there is no equivalent of TypeScript's key remapping
+(`[K in keyof T as ...]`).
+
+**Quick fixes are textual.**
+- A fix writes types the way the checker prints them, e.g. `list[Foo] | None`, so the file
+  may need an import it doesn't have yet.
+- No fix is offered when it can't be done safely, e.g. removing a default from inside
+  `Field(...)`.
+
+**It isn't free at import.** `@assert_shape` does nothing at runtime, but its argument is
+still evaluated: `import py_extended_types` takes about 2 ms, and each decorator builds a
+few small, lazy objects. No fields are read and no `Map` / `Filter` / `Record` function is
+called.
+
 ## Development
 
 ```bash
