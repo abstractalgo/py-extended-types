@@ -32,7 +32,7 @@ def test_check_reports_stylish_output(
     )
 
 
-def test_check_reports_import_errors_at_failing_line(
+def test_unresolvable_base_class_is_reported(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Given
@@ -44,11 +44,66 @@ def test_check_reports_import_errors_at_failing_line(
     # Then
     out = capsys.readouterr().out
     assert exit_code == 1
-    assert out.startswith("demo_pkg/broken.py\n  6:14  error")
+    assert out.startswith("demo_pkg/broken.py\n  5:1  error")
     assert (
-        "could not import module: NameError: name 'missing_base' is not defined  py-extended-types(import-error)"
+        "can't read the fields of Broken: its base class missing_base can't be resolved"
         in out
     )
+
+
+def test_syntax_errors_are_analysis_errors(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given
+    (tmp_path / "half_typed.py").write_text(
+        "from py_extended_types import assert_shape\n\n@assert_shape(Broken)\nclass Broken(:\n    id: int\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # When
+    exit_code = cli.main(["check", "--no-venv", "--format", "json", "."])
+
+    # Then
+    diagnostic = json.loads(capsys.readouterr().out)["diagnostics"][0]
+    assert exit_code == 1
+    assert (diagnostic["line"], diagnostic["rule"], diagnostic["origin"]) == (
+        4,
+        "py-extended-types(analysis-error)",
+        str((tmp_path / "half_typed.py").resolve()),
+    )
+    assert diagnostic["message"].startswith("could not analyze: ")
+
+
+def test_checked_code_is_never_run(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given
+    marker = tmp_path / "ran.txt"
+    (tmp_path / "effects.py").write_text(
+        "import pathlib, sys\n"
+        f"pathlib.Path({str(marker)!r}).write_text('imported')\n"
+        "sys.exit(3)\n\n"
+        "from pydantic import BaseModel\n\n\nclass User(BaseModel):\n    id: int\n"
+    )
+    (tmp_path / "contracts.py").write_text(
+        "from pydantic import BaseModel\n"
+        "from py_extended_types import Partial, assert_shape\n"
+        "from effects import User\n\n"
+        "raise RuntimeError('module body ran')\n\n"
+        "@assert_shape(Partial(User))\n"
+        "class Patch(BaseModel):\n    id: str | None = None\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # When
+    exit_code = cli.main(["check", "--no-venv", "."])
+
+    # Then
+    assert exit_code == 1
+    assert "Patch.id has type 'str | None', expected 'int | None'" in (
+        capsys.readouterr().out
+    )
+    assert not marker.exists()
 
 
 def test_check_is_silent_on_success_unless_verbose(
@@ -91,6 +146,23 @@ def test_show_prints_shape(
     assert (
         capsys.readouterr().out == "Partial[Omit[User, 'id']]:\n  name?: str | None\n"
     )
+
+
+def test_show_finds_helpers_the_module_doesnt_import(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given
+    (tmp_path / "plain_models.py").write_text(
+        "from pydantic import BaseModel\n\n\nclass User(BaseModel):\n    id: int\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # When
+    exit_code = cli.main(["show", "--no-venv", "plain_models:Required(Partial(User))"])
+
+    # Then
+    assert exit_code == 0
+    assert capsys.readouterr().out == "Required[Partial[User]]:\n  id: int\n"
 
 
 def test_check_json_format(

@@ -1,39 +1,38 @@
 """`py-extended-types` command line.
 
-The checker must import the user's modules, which need the user's dependencies,
-so when installed as a standalone tool (`uv tool install`) it re-executes itself
-under the target project's interpreter (`--python`, `$VIRTUAL_ENV`, or the
-nearest `.venv`), putting this package on `PYTHONPATH`. That works because
-`py_extended_types` has no dependencies of its own.
+Checking is static: mypy's semantic analysis reads the checked files and everything they
+import from source, so no module is imported and no code runs, not even the project's
+interpreter. The project's environment (`--python`, `$VIRTUAL_ENV`, or the nearest `.venv`)
+is only used to find its installed packages on disk.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib
+import ast
+import hashlib
+import json
 import os
-import subprocess
 import sys
 from collections.abc import Iterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
 
-import py_extended_types
-from py_extended_types import overrides
-from py_extended_types.core import check, registrations, start_collecting
+from py_extended_types.analysis.check import check, declarations
+from py_extended_types.analysis.errors import ShapeError
+from py_extended_types.analysis.project import AnalysisFailed, Environment, Project
+from py_extended_types.analysis.shapes import Scope, evaluate
+from py_extended_types.analysis.types import format_type
 from py_extended_types.report import (
     Diagnostic,
+    analysis_failure,
     diagnostics_for,
-    import_failure,
     render_json,
     render_stylish,
     use_color,
 )
-from py_extended_types.shapes import Shape, ShapeError, as_shape
-from py_extended_types.typecheck import format_type
 
-CHILD_ENV_VAR = "PY_EXTENDED_TYPES_CHILD"
+CACHE_DIR_VAR = "PY_EXTENDED_TYPES_CACHE_DIR"
 SKIP_DIRS = frozenset(
     {
         ".git",
@@ -61,26 +60,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 2
 
-    if not options.no_venv and os.environ.get(CHILD_ENV_VAR) != "1":
-        python = _resolve_python(options.python)
-        if python is not None and not _is_current_interpreter(python):
-            return _reexec(python, args)
-
+    environment = _environment(options.python, no_venv=options.no_venv)
     if options.command == "check":
-        sources = overrides.read(sys.stdin.read()) if options.stdin else {}
+        sources = _read_stdin(sys.stdin.read()) if options.stdin else {}
         return _run_check(
             options.paths,
+            environment=environment,
             output_format=options.format,
             verbose=options.verbose,
             sources=sources,
         )
-    return _run_show(options.target)
+    return _run_show(options.target, environment)
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="py-extended-types",
-        description="Verify `@assert_shape` / `@assert_field` contracts between Python classes.",
+        description="Verify `@assert_shape` / `@assert_field` contracts between Python classes, statically.",
     )
     parser.add_argument(
         "--version", action="version", version=f"py-extended-types {_version()}"
@@ -88,12 +84,13 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--python",
-        help="interpreter to import the project with (default: $VIRTUAL_ENV or nearest .venv)",
+        help="the project's interpreter, used only to find its installed packages; never run "
+        "(default: $VIRTUAL_ENV or nearest .venv)",
     )
     common.add_argument(
         "--no-venv",
         action="store_true",
-        help="run in py-extended-types's own interpreter",
+        help="find installed packages in py-extended-types's own environment instead",
     )
     subcommands = parser.add_subparsers(dest="command")
 
@@ -138,6 +135,13 @@ def _version() -> str:
         return "unknown"
 
 
+def _environment(explicit: str | None, *, no_venv: bool) -> Environment:
+    if no_venv:
+        return Environment.current()
+    python = _resolve_python(explicit)
+    return Environment.of_interpreter(python) if python else Environment.current()
+
+
 def _resolve_python(explicit: str | None) -> Path | None:
     if explicit:
         return Path(explicit)
@@ -153,56 +157,74 @@ def _resolve_python(explicit: str | None) -> Path | None:
     return None
 
 
-def _is_current_interpreter(python: Path) -> bool:
-    venv = python.absolute().parent.parent
-    return venv.resolve() == Path(sys.prefix).resolve()
-
-
-def _reexec(python: Path, args: list[str]) -> int:
-    package_root = str(Path(py_extended_types.__file__).resolve().parent.parent)
-    env = dict(os.environ)
-    env[CHILD_ENV_VAR] = "1"
-    env["PYTHONPATH"] = os.pathsep.join(
-        filter(None, [package_root, env.get("PYTHONPATH")])
+def _cache_dir(environment: Environment) -> Path:
+    """mypy's incremental cache, per project directory and environment."""
+    explicit = os.environ.get(CACHE_DIR_VAR)
+    if explicit:
+        return Path(explicit)
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    key = json.dumps(
+        [str(Path.cwd()), environment.package_dirs, environment.python_version]
     )
-    return subprocess.call([str(python), "-m", "py_extended_types", *args], env=env)
+    return base / "py-extended-types" / hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _read_stdin(stream_text: str) -> dict[Path, str]:
+    """Parse the `--stdin` payload: a JSON object of `{path: source}`."""
+    payload = json.loads(stream_text) if stream_text.strip() else {}
+    if not isinstance(payload, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in payload.items()
+    ):
+        raise ValueError(
+            "--stdin expects a JSON object mapping file paths to source text"
+        )
+    return {Path(key).resolve(): value for key, value in payload.items()}
 
 
 def _run_check(
     paths: list[Path],
     *,
+    environment: Environment,
     output_format: str,
     verbose: bool,
     sources: dict[Path, str] | None = None,
 ) -> int:
     sources = sources or {}
-    start_collecting()
-    overrides.install(sources)
     files = sorted(set(_discover(paths, sources)))
     diagnostics: list[Diagnostic] = []
-    for path in files:
+    classes: set[tuple[Path, str]] = set()
+    if files:
         try:
-            _import_file(path)
-        except BaseException as error:  # user modules may call sys.exit()
-            diagnostics.append(import_failure(path, error))
-
-    # Only report classes declared in the files asked about, not ones imported along the way.
-    scanned = set(files)
-    checked = [r for r in registrations() if Path(r.filename).resolve() in scanned]
-    for registration in checked:
-        diagnostics.extend(diagnostics_for(registration, check(registration)))
-    # A class can carry several declarations (one `@assert_field` per field).
-    classes = len({id(r.cls) for r in checked})
+            project = Project.analyze(
+                files,
+                overrides=sources,
+                environment=environment,
+                cache_dir=_cache_dir(environment),
+            )
+        except AnalysisFailed as error:
+            diagnostics.extend(analysis_failure(failure) for failure in error.failures)
+        else:
+            for path in files:
+                for declaration in declarations(project, path):
+                    classes.add((path, declaration.class_name))
+                    diagnostics.extend(
+                        diagnostics_for(
+                            declaration,
+                            check(project, declaration),
+                            project.source(declaration.module),
+                        )
+                    )
 
     if output_format == "json":
-        print(render_json(diagnostics, classes=classes, files=len(files)))
+        print(render_json(diagnostics, classes=len(classes), files=len(files)))
         return 1 if diagnostics else 0
     if diagnostics:
         print(render_stylish(diagnostics, color=use_color()))
         return 1
     if verbose:
         print(
-            f"✔ {classes} class{'es' if classes != 1 else ''} checked in "
+            f"✔ {len(classes)} class{'es' if len(classes) != 1 else ''} checked in "
             f"{len(files)} file{'s' if len(files) != 1 else ''}, 0 problems"
         )
     return 0
@@ -219,7 +241,7 @@ def _discover(paths: list[Path], sources: dict[Path, str]) -> Iterator[Path]:
                 if not filename.endswith(".py"):
                     continue
                 file = Path(root, filename).resolve()
-                # Cheap pre-filter so we only import modules that declare something.
+                # Cheap pre-filter so only modules that declare something are analyzed.
                 source = sources.get(file)
                 if source is None:
                     try:
@@ -232,53 +254,27 @@ def _discover(paths: list[Path], sources: dict[Path, str]) -> Iterator[Path]:
                     yield file
 
 
-def _import_file(path: Path) -> None:
-    root, module_name = _module_name(path)
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    importlib.import_module(module_name)
-
-
-def _module_name(path: Path) -> tuple[Path, str]:
-    """Walk up through `__init__.py` packages to find the import root and dotted name."""
-    parts = [] if path.stem == "__init__" else [path.stem]
-    directory = path.parent
-    while (directory / "__init__.py").exists():
-        parts.insert(0, directory.name)
-        directory = directory.parent
-    return directory, ".".join(parts)
-
-
-def _run_show(target: str) -> int:
+def _run_show(target: str, environment: Environment) -> int:
+    module, separator, expression = target.partition(":")
+    if not separator:
+        print("error: target must look like 'module:Expr'", file=sys.stderr)
+        return 1
     try:
-        shape = _evaluate_target(target)
-        fields = shape.fields
-    except (
-        ShapeError,
-        ImportError,
-        SyntaxError,
-        NameError,
-        AttributeError,
-        ValueError,
-    ) as error:
+        node = ast.parse(expression, mode="eval").body
+        project = Project.analyze(
+            [],
+            modules=[module, "py_extended_types"],
+            environment=environment,
+            cache_dir=_cache_dir(environment),
+        )
+        if project.module(module) is None:
+            raise ShapeError(f"can't find module {module}")
+        shape = evaluate(Scope(project, module, fallback="py_extended_types"), node)
+    except (ShapeError, AnalysisFailed, SyntaxError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(f"{shape!r}:")
-    for name, member in fields.items():
+    for name, member in shape.fields.items():
         marker = "" if member.required else "?"
-        quals = f"  [{', '.join(sorted(member.quals))}]" if member.quals else ""
-        print(f"  {name}{marker}: {format_type(member.annotation)}{quals}")
+        print(f"  {name}{marker}: {format_type(member.annotation)}")
     return 0
-
-
-def _evaluate_target(target: str) -> Shape:
-    module_name, separator, expression = target.partition(":")
-    if not separator:
-        raise ValueError("target must look like 'module:Expr'")
-    sys.path.insert(0, str(Path.cwd()))
-    module = importlib.import_module(module_name)
-    namespace: dict[str, Any] = dict(vars(module))
-    namespace.update(
-        {name: getattr(py_extended_types, name) for name in py_extended_types.__all__}
-    )
-    return as_shape(eval(expression, namespace))  # noqa: S307 - developer-supplied expression

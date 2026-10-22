@@ -32,23 +32,21 @@ paths is re-checked rather than just the edited file, because changing a model i
 one file can break a contract declared in another. A run still in flight when you
 type or save again is cancelled.
 
-Half-typed code often doesn't import yet. When a check of unsaved code hits an
-import error, its result is discarded and the previous diagnostics stay (the
+Half-typed code often doesn't parse yet. When a check of unsaved code hits an
+`analysis-error`, its result is discarded and the previous diagnostics stay (the
 language server already reports syntax errors); a check of saved files reports
-import errors normally.
+analysis errors normally.
 
-Checking imports your modules, which runs their top-level code. That's harmless
-for schema modules; for code with import-time side effects, set `pyExtendedTypes.run` to
-`onSave`, which checks only the files on disk.
+Checking is static: the CLI reads your modules with mypy's semantic analysis and never
+imports or runs them, so checking as you type is safe for any code.
 
 The status bar shows the problem count; click it for the log. **py-extended-types: Restart**
 kills any running check, clears all diagnostics and starts again with freshly read
 settings.
 
 `<py-extended-types>` is `pyExtendedTypes.path` if set, else `.venv/bin/py-extended-types` in the workspace
-folder, else `py-extended-types` from `PATH`. The CLI imports your modules, so it should run
-under the project's interpreter (the venv binary does; a global `py-extended-types`
-re-executes itself under the nearest `.venv`).
+folder, else `py-extended-types` from `PATH`. It finds the project's installed packages in
+the nearest `.venv` without running its interpreter.
 
 ## Settings
 
@@ -71,7 +69,7 @@ and install a package:
 
 ```bash
 npm run package
-code --install-extension py-extended-types-0.4.1.vsix   # then "Developer: Reload Window"
+code --install-extension py-extended-types-0.6.0.vsix   # then "Developer: Reload Window"
 ```
 
 Requires the CLI's JSON output (`py-extended-types check --format json`, report `version: 1`).

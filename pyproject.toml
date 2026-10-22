@@ -1,13 +1,13 @@
 [project]
 name = "py-extended-types"
-version = "0.5.0"
-description = "TypeScript-style shape contracts (`@assert_shape`, `@assert_field`, Partial/Required/Pick/Omit/Record, Map/Filter) for Python classes"
+version = "0.6.0"
+description = "TypeScript-style shape contracts (`@assert_shape`, `@assert_field`, Partial/Required/Pick/Omit/Record) for Python classes, checked statically"
 readme = "README.md"
 authors = [{ name = "Dragan Okanovic" }]
 requires-python = ">=3.11"
-# Kept dependency-free on purpose: the CLI injects this package into the target
-# project's interpreter, so it must import cleanly alongside any pydantic version.
-dependencies = []
+# The checker builds on mypy's semantic analysis (and some of its internals, hence the
+# upper bound). The decorators and helpers themselves only import the standard library.
+dependencies = ["mypy>=2.4,<3"]
 
 [project.urls]
 Repository = "https://github.com/abstractalgo/py-extended-types"

@@ -4,13 +4,17 @@
 fields of another, or of a `Partial` / `Required` / `Omit` / `Pick` of it. `@assert_field`
 does the same for one field's type, like TypeScript's `T["key"]`.
 
+Checking is **static**: `py-extended-types check` reads your code with mypy's semantic
+analysis and never imports or runs it, so modules with import-time side effects are as
+safe to check as any other.
+
 Supported classes are Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs
 classes and plain annotated classes, on either side of the contract. In a plain class, a
 field with a class-level value has that default and one without is required (`ClassVar`s
 are skipped). Classes these rules can't read reliably are reported as `invalid-shape`
 rather than guessed at: anything with its own metaclass (SQLAlchemy's declarative base,
-`Protocol`, `Enum`) or with a descriptor in place of a field (SQLAlchemy-mapped classes,
-`__slots__`, properties).
+`Protocol`, `Enum`, `ABC`), deriving from a class of the standard library or an installed
+package, or with a descriptor in place of a field.
 
 This repo holds the Python package (`src/`, `tests/`) and its VS Code extension
 ([`vscode/`](vscode/README.md)), which shows the checker's problems and quick fixes in the editor.
@@ -43,13 +47,22 @@ format: problems grouped by file, pinned to the field's line (or the decorator's
 for missing fields), coloured on a TTY (`NO_COLOR` / `FORCE_COLOR` override).
 Nothing is printed when everything matches; exit code is 1 on any problem.
 Rules: `type-mismatch`, `required-mismatch`, `missing-field`, `unexpected-field`,
-`invalid-shape`, `import-error`.
+`invalid-shape`, `analysis-error` (a file that can't be analyzed, e.g. a syntax error).
 
 `--format json` emits the same diagnostics for editors, each with an optional
 `fix` (`title` + text `edits`) that makes the field match the shape. With `--stdin`,
 it reads a JSON object of `{path: source}` and checks those sources instead of the
 files on disk (editors use this for unsaved buffers; other modules importing them
 see the unsaved version too).
+
+## Installing
+
+```bash
+uv add py-extended-types
+```
+
+The package depends on mypy, which the checker builds on. Your app only imports the
+decorators and helpers, which are no-ops at runtime and don't load mypy.
 
 ## Semantics
 
@@ -58,48 +71,21 @@ see the unsaved version too).
 | `Partial(T, nullable=True)` | every field optional; widens to `T \| None` unless `nullable=False` |
 | `Required(T)` | every field required and non-nullable: `T \| None` becomes `T` |
 | `Pick(T, keys)` / `Omit(T, keys)` | keep / drop fields; `keys` is one name or a list of them; unknown keys are an error |
-| `Record(keys, value)` | a required field per key, like TypeScript's `Record<K, V>`: `keys` is a `Literal[...]`, `KeyOf(T)` or an iterable of names; `value` is a type, or a function of the key returning one |
-| `KeyOf(T)` | `T`'s field names, like `keyof T`; read lazily, so it's a placeholder rather than a `Literal` (`.literal` builds one) |
+| `Record(keys, value, *, name=None)` | a required field of type `value` per key, like TypeScript's `Record<K, V>`: `keys` is a `Literal[...]`, `KeyOf(T)` or a list of names |
+| `KeyOf(T)` | `T`'s field names, like `keyof T`, as `Record`'s keys |
 
 Helpers compose: `Partial(Omit(User, "id"))`.
 
-## Your own helpers: `Map` and `Filter`
+A shape expression is read from the source, not run, so it may only contain:
 
-`Partial`, `Required`, `Pick` and `Omit` are built from two primitives, which you can use too:
+- classes, by name, dotted name (`models.User`) or import alias,
+- the helpers above,
+- literal arguments: strings, lists of strings, `True` / `False`, `Literal[...]`, and types
+  such as `list[int] | None` for `Record`'s value,
+- module-level names bound to any of these, in any module: `Public = Omit(User,
+  "password")`, `KEYS = ["id", "name"]`.
 
-| Primitive | Effect |
-| --- | --- |
-| `Map(T, fn, *, name=None)` | replace every field with `fn(member)`, in order; it can't drop or rename fields |
-| `Filter(T, predicate, *, name=None)` | keep the fields where `predicate(member)` is true |
-
-`name` is how the shape appears in messages (otherwise `Map[User, <lambda>]`). Both
-receive a `Member` for each field:
-
-| Attribute | |
-| --- | --- |
-| `name` | the field's name |
-| `annotation` | its type, e.g. `str \| None`; `Final` / `ReadOnly` are moved to `quals` |
-| `quals` | `frozenset` of `"Final"` / `"ReadOnly"` |
-| `default` | `NO_DEFAULT` (required), `HAS_DEFAULT` (optional, value unknown), `Factory(fn)`, or the value |
-| `field` | Pydantic `Field(...)` keyword arguments, including constraints (`{"alias": ..., "max_length": 50}`); empty otherwise |
-| `required` | `default is NO_DEFAULT` |
-| `replace(...)` | a copy with `annotation`, `quals`, `default` or `field` changed |
-
-```python
-from py_extended_types import Filter, Map, Partial, add_none, assert_shape, is_assignable
-
-def Nullable(T):  # `T | None`, still required
-    return Map(T, lambda m: m.replace(annotation=add_none(m.annotation)), name="Nullable")
-
-Public = Filter(User, lambda m: not m.field.get("exclude"), name="Public[User]")
-Strings = Filter(User, lambda m: is_assignable(m.annotation, str))
-
-@assert_shape(Partial(Public))
-class UserPatch(BaseModel): ...
-```
-
-`add_none`, `remove_none`, `includes_none`, `is_assignable` and `is_equivalent` are
-exported for use in these functions. An exception raised in one is reported as an
+Anything else, such as calling your own function or passing a `lambda`, is an
 `invalid-shape` problem.
 
 ## Matching
@@ -107,17 +93,12 @@ exported for use in these functions. An exception raised in one is reported as a
 A class matches a shape when:
 
 - it has **every field** of the shape, required or optional,
-- each field's type is **equivalent** to the shape's: `Optional[str]` and
-  `str | None` match, `Annotated` metadata is ignored, but narrower types such as
+- each field's type is **equivalent** to the shape's, as mypy decides it: `Optional[str]`
+  and `str | None` match, `Annotated` metadata is ignored, but narrower types such as
   `Literal["a"]` for `str` or `bool` for `int` do not,
 - each field's **required-ness** is the same: an optional field in the shape needs
   a default here, and a required one must not have one,
 - there are **no extra fields** (`exact=False` to permit them).
-
-py-extended-types is a dev-time tool only: in the running app `@assert_shape` / `@assert_field`
-return the class untouched and record nothing, and shapes are lazy, so no fields are read and no `Map` /
-`Filter` function is called. Only `py-extended-types check` (which switches collection on before
-importing your modules) gathers and verifies the declarations.
 
 ## One field: `@assert_field`
 
@@ -150,9 +131,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from py_extended_types import (
-    Filter, KeyOf, Map, Omit, Partial, Pick, Record, Required, add_none, assert_shape,
-)
+from py_extended_types import KeyOf, Omit, Partial, Pick, Record, Required, assert_shape
 
 class User(BaseModel):
     id: int
@@ -226,8 +205,9 @@ class CreateUser(BaseModel):
     password: str
 ```
 
-Both `Pick` and `Omit` take one name or a list: `Omit(User, ["id", "password"])`. They report a misspelled key (`Omit(User, "idd")`) as `invalid-shape`, listing
-the fields that do exist.
+Both `Pick` and `Omit` take one name or a list: `Omit(User, ["id", "password"])`. They
+report a misspelled key (`Omit(User, "idd")`) as `invalid-shape`, listing the fields that do
+exist.
 
 ### `Record`
 
@@ -238,15 +218,6 @@ One required field per key, all of the same type:
 class Translations(BaseModel):
     en: str
     de: str
-```
-
-Or with a function that picks each field's type from its key:
-
-```python
-@assert_shape(Record(["count", "label"], lambda key: str if key == "label" else int))
-class Counter(BaseModel):
-    count: int
-    label: str
 ```
 
 ### `KeyOf`
@@ -262,47 +233,15 @@ class UserFieldVisibility(BaseModel):
     tags: bool
 ```
 
-`KeyOf(User).literal` gives `Literal['id', 'name', 'email', 'tags', 'password']`, read when
-you access it.
+### Composing and naming shapes
 
-### `Map`
-
-Changes every field with a function of its `Member`. Here each type gets `| None`, but
-required fields stay required:
+Each helper accepts a class or another helper's result, and a shape bound to a
+module-level name can be reused anywhere:
 
 ```python
-Nullable = Map(User, lambda m: m.replace(annotation=add_none(m.annotation)), name="Nullable[User]")
+Public = Omit(User, "password")
 
-@assert_shape(Nullable)
-class NullableUser(BaseModel):
-    id: int | None
-    name: str | None
-    email: str | None = None
-    tags: list[str] | None = []
-    password: str | None
-```
-
-### `Filter`
-
-Keeps the fields its predicate accepts. Here it drops fields excluded from serialization:
-
-```python
-Public = Filter(User, lambda m: not m.field.get("exclude"), name="Public[User]")
-
-@assert_shape(Public)
-class UserResponse(BaseModel):
-    id: int
-    name: str
-    email: str | None = None
-    tags: list[str] = []
-```
-
-### Composing
-
-Each helper accepts a class or another helper's result:
-
-```python
-@assert_shape(Partial(Omit(User, ["id", "password"])))
+@assert_shape(Partial(Omit(Public, "id")))
 class ProfilePatch(BaseModel):
     name: str | None = None
     email: str | None = None
@@ -310,9 +249,7 @@ class ProfilePatch(BaseModel):
 ```
 
 `py-extended-types show 'app.models:Partial(Omit(User, "id"))'` prints the fields of any of
-these shapes. In VS Code, Pylance doesn't autocomplete inside a class decorator's
-arguments, so write shapes that use a `lambda` as module-level variables (like `Nullable`
-and `Public` above) to get completions for `m`.
+these shapes.
 
 ## CLI
 
@@ -321,11 +258,15 @@ py-extended-types check [PATHS...] [-v]           # verify @assert_shape / @asse
 py-extended-types show 'pkg.mod:Partial(User)'    # print a class's / shape's fields
 ```
 
-The checker imports your modules, so it runs under **your project's**
-interpreter: `--python`, else `$VIRTUAL_ENV`, else the nearest `.venv`. It puts
-this package on `PYTHONPATH` (it has no dependencies), so the project doesn't
-need it installed just to run the check. `--no-venv` disables this. Only files
-mentioning `assert_shape(` or `assert_field(`, and `py_extended_types`, are imported.
+The checker analyzes the files under `PATHS` that mention `assert_shape(` or
+`assert_field(`, and `py_extended_types`, plus everything they import. It finds your
+project's installed packages in its environment (`--python`, else `$VIRTUAL_ENV`, else the
+nearest `.venv`) by reading the venv's `site-packages` and `.pth` files, without running
+its interpreter; `--no-venv` uses the checker's own environment instead.
+
+The first run analyzes the standard library and your dependencies, which takes a second
+or two; later runs reuse mypy's cache in `~/.cache/py-extended-types` (or
+`$XDG_CACHE_HOME`, or `$PY_EXTENDED_TYPES_CACHE_DIR`) and take a fraction of that.
 
 ## Limitations
 
@@ -333,49 +274,44 @@ mentioning `assert_shape(` or `assert_field(`, and `py_extended_types`, are impo
 opaque `Shape` object, so they never report a mismatch and can't autocomplete or validate
 field names: `Pick(User, "nmae")` is only caught by `py-extended-types check`. Python's
 type system has no `keyof` or mapped types (PEP 827 proposes them), so this can't be fixed
-inside the library. In VS Code, Pylance also shows `Unknown` for names inside a class
-decorator's arguments; define shapes that use a `lambda` as module-level variables.
+inside the library.
 
-**Checking runs your code.** The CLI imports every module it checks, which executes their
-top-level code with your project's interpreter. Modules with import-time side effects
-(connecting to services, reading required environment variables) run those too, and a
-module that fails to import is reported as `import-error` instead of being checked.
+**Shapes are read, never run.** There are no custom helpers: a shape can't be built by a
+function of yours, and `Record`'s value is a type, not a function of the key. There is no
+equivalent of TypeScript's key remapping (`[K in keyof T as ...]`) either.
 
-**Only declarations that run on import are checked.** `@assert_shape` and `@assert_field` record a class when
-the decorator executes, so a class defined inside a function, or under
-`if TYPE_CHECKING:`, is never seen. Files are also skipped unless they contain
-`assert_shape(` or `assert_field(`, and `py_extended_types`, so re-exporting the decorators from another module
-of yours hides the files that use it.
+**Only some declarations are found.** Classes are found at the top level of a module or
+nested in other classes; a class defined inside a function or an `if` block (including
+`if TYPE_CHECKING:`) isn't checked. Files are skipped unless they contain `assert_shape(`
+or `assert_field(`, and `py_extended_types`, so re-exporting the decorators from another
+module of yours hides the files that use it.
 
-**Type comparison approximates mypy and pyright.**
+**Installed packages are found from files.** Packages are read from the environment's
+`site-packages` and the plain directory entries of its `.pth` files. Editable installs
+that work through an import hook (some setuptools versions) aren't followed; a class from
+such a package can't be resolved and is reported as `invalid-shape`.
+
+**Type comparison is mypy's.**
 - Fields match only when their types are equivalent, i.e. each is assignable to the other.
   `bool` doesn't match `int`, and `int` doesn't match `float`, even though a type checker
   accepts either in place of the second.
-- `Any`, `TypeVar`s and forward references that can't be resolved match anything, so
-  generic fields aren't really checked.
-- `Protocol`s are compared by class, not structurally: a class that implements a protocol
-  doesn't match the protocol type.
+- `Any` matches anything, so a field typed with `Any` isn't really checked.
+- A field annotated with an undefined name is an `invalid-shape` problem, but an undefined
+  name nested in a type (`list["Missing"]`) becomes `Any` and matches anything.
 
 **Only names, types and required-ness are compared.**
 - Default values aren't compared: `x: int = 0` and `x: int = 1` match.
-- `Field(...)` arguments such as `alias` or `max_length` aren't compared (`Filter` and
-  `Map` can read them).
-- `Final` / `ReadOnly` qualifiers are recorded in `Member.quals` but not compared.
+- `Field(...)` arguments such as `alias` or `max_length` aren't compared.
+- `Final` / `ReadOnly` qualifiers aren't compared.
 - Field order doesn't matter.
 
 **Some classes can't be read.**
 - Supported: Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs classes and
   plain annotated classes. Anything else is an `invalid-shape` problem, including
-  SQLAlchemy models, `Protocol`s and `Enum`s.
+  SQLAlchemy models, `Protocol`s, `Enum`s and plain classes deriving from a class of the
+  standard library or an installed package.
 - In a plain class, attributes assigned in `__init__` aren't fields, and a field whose
-  default is a function is rejected (functions are descriptors, like the ones frameworks
-  put in place of fields).
-- Pydantic's `Field(...)` arguments come from its private `FieldInfo._attributes_set`.
-  If a Pydantic release changes it, `Member.field` comes back empty.
-
-**Helpers can't rename fields.** `Map` changes a field's type, default or qualifiers but
-keeps its name, and there is no equivalent of TypeScript's key remapping
-(`[K in keyof T as ...]`).
+  default is an instance of a descriptor class is rejected.
 
 **Quick fixes are textual.**
 - A fix writes types the way the checker prints them, e.g. `list[Foo] | None`, so the file
@@ -383,19 +319,20 @@ keeps its name, and there is no equivalent of TypeScript's key remapping
 - No fix is offered when it can't be done safely, e.g. removing a default from inside
   `Field(...)`.
 
-**It isn't free at import.** `@assert_shape` does nothing at runtime, but its argument is
-still evaluated: `import py_extended_types` takes about 2 ms, and each decorator builds a
-few small, lazy objects. No fields are read and no `Map` / `Filter` / `Record` function is
-called.
-
 ## Development
 
 ```bash
-uv sync                                       # dev tools: pytest, ruff, mypy, pydantic
+uv sync                                       # dev tools: pytest, ruff, mypy, pydantic, attrs
 uv run pytest
 uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src tests
 uv tool install --editable .                  # optional global `py-extended-types`
 ```
+
+The VS Code extension's version (`vscode/package.json`) always matches the package's
+(`pyproject.toml`); bump both together.
+
+The runtime API (`core.py`, `shapes.py`) must only import the standard library; the checker
+lives in `analysis/` and builds on mypy (`analysis/project.py` runs its semantic analysis).
 
 Projects using it can depend on this repo by path while developing it, e.g. with uv:
 `py-extended-types = { path = "../py-extended-types", editable = true }` under `[tool.uv.sources]`.

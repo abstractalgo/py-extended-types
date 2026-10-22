@@ -11,20 +11,17 @@ path/to/models.py
 from __future__ import annotations
 
 import ast
-import inspect
 import json
-import linecache
 import os
 import sys
-import textwrap
-import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from py_extended_types.core import Declaration, Problem
-from py_extended_types.shapes import Member
-from py_extended_types.typecheck import format_type, includes_none
+from py_extended_types.analysis.check import Declaration, Problem
+from py_extended_types.analysis.fields import Member
+from py_extended_types.analysis.project import Failure
+from py_extended_types.analysis.types import format_type, includes_none
 
 
 @dataclass(frozen=True)
@@ -56,17 +53,18 @@ class Diagnostic:
     rule: str
     message: str
     fix: Fix | None = None
-    # For import errors: the absolute path of the file the exception was raised in.
+    # For analysis errors: the absolute path of the file that couldn't be analyzed.
     origin: str | None = None
 
 
 def diagnostics_for(
-    registration: Declaration, problems: Sequence[Problem]
+    declaration: Declaration, problems: Sequence[Problem], source_text: str
 ) -> list[Diagnostic]:
     """Pin each problem to its field's name, or to the decorator when the field isn't declared here."""
-    path = str(Path(registration.filename).resolve())
-    decorator = _decorator_span(registration)
-    source = _class_source(registration.cls)
+    path = str(declaration.path.resolve())
+    lines = source_text.splitlines()
+    decorator = _decorator_span(declaration, lines)
+    source = _class_source(declaration.class_def, source_text, lines)
     removed = {p.field for p in problems if p.rule == "unexpected-field" and p.field}
     append_at = _append_position(source, removed) if source else None
     result = []
@@ -95,36 +93,17 @@ def diagnostics_for(
     return result
 
 
-def import_failure(path: Path, error: BaseException) -> Diagnostic:
-    """Locate an import failure in `path`, naming the real origin when it's another file."""
-    line, column, end_line, end_column, origin = 1, 1, 1, 1, None
-    if isinstance(error, SyntaxError) and error.filename:
-        line, column = error.lineno or 1, error.offset or 1
-        end_line = error.end_lineno or line
-        end_column = error.end_offset or column + 1
-        origin = (error.filename, line)
-    else:
-        frames = traceback.extract_tb(error.__traceback__)
-        if frames:
-            origin = (frames[-1].filename, frames[-1].lineno or 1)
-        for frame in frames:
-            if Path(frame.filename).resolve() == path:
-                line = frame.lineno or 1
-                column = (frame.colno or 0) + 1
-                end_line = frame.end_lineno or line
-                end_column = (frame.end_colno or frame.colno or 0) + 1
-    message = f"could not import module: {type(error).__name__}: {error}"
-    if origin is not None and Path(origin[0]).resolve() != path:
-        message += f" (at {display_path(origin[0])}:{origin[1]})"
+def analysis_failure(failure: Failure) -> Diagnostic:
+    """A file that couldn't be analyzed, e.g. because of a syntax error."""
     return Diagnostic(
-        str(path),
-        line,
-        column,
-        end_line,
-        end_column,
-        "py-extended-types(import-error)",
-        message,
-        origin=str(Path(origin[0]).resolve()) if origin is not None else None,
+        str(failure.path),
+        failure.line,
+        failure.column,
+        failure.line,
+        failure.column + 1,
+        "py-extended-types(analysis-error)",
+        f"could not analyze: {failure.message}",
+        origin=str(failure.path),
     )
 
 
@@ -240,23 +219,11 @@ class _ClassSource:
     line_lengths: dict[int, int]
 
 
-def _class_source(cls: type) -> _ClassSource | None:
-    try:
-        source_lines, first_line = inspect.getsourcelines(cls)
-        source = textwrap.dedent("".join(source_lines))
-        tree = ast.parse(source)
-    except (OSError, TypeError, SyntaxError):
+def _class_source(
+    class_def: ast.ClassDef, source_text: str, lines: list[str]
+) -> _ClassSource | None:
+    if not class_def.body:
         return None
-    class_def = next(
-        (node for node in tree.body if isinstance(node, ast.ClassDef)), None
-    )
-    if class_def is None:
-        return None
-    indent = len(source_lines[0]) - len(source_lines[0].lstrip())
-
-    def to_line(lineno: int) -> int:
-        return first_line + lineno - 1
-
     fields = {}
     for statement in class_def.body:
         if not (
@@ -264,19 +231,19 @@ def _class_source(cls: type) -> _ClassSource | None:
             and isinstance(statement.target, ast.Name)
         ):
             continue
-        column = indent + statement.col_offset + 1
+        column = statement.col_offset + 1
         name = statement.target.id
         value = (
-            ast.get_source_segment(source, statement.value)
+            ast.get_source_segment(source_text, statement.value)
             if statement.value is not None
             else None
         )
         fields[name] = _DeclaredField(
-            line=to_line(statement.lineno),
+            line=statement.lineno,
             column=column,
             name_end_column=column + len(name),
-            end_line=to_line(statement.end_lineno or statement.lineno),
-            end_column=indent + (statement.end_col_offset or 0) + 1,
+            end_line=statement.end_lineno or statement.lineno,
+            end_column=(statement.end_col_offset or 0) + 1,
             value=value,
             value_node=statement.value,
         )
@@ -287,18 +254,24 @@ def _class_source(cls: type) -> _ClassSource | None:
             if isinstance(statement, ast.AnnAssign)
             and isinstance(statement.target, ast.Name)
             else None,
-            to_line(statement.end_lineno or statement.lineno),
+            statement.end_lineno or statement.lineno,
         )
         for statement in class_def.body
+    )
+    first_line = (
+        class_def.decorator_list[0].lineno
+        if class_def.decorator_list
+        else class_def.lineno
     )
     return _ClassSource(
         fields=fields,
         statements=statements,
-        header_line=to_line(class_def.body[0].lineno) - 1,
-        body_indent=" " * (indent + class_def.body[0].col_offset),
+        header_line=class_def.body[0].lineno - 1,
+        body_indent=" " * class_def.body[0].col_offset,
         line_lengths={
-            first_line + index: len(text.rstrip("\r\n"))
-            for index, text in enumerate(source_lines)
+            number: len(lines[number - 1])
+            for number in range(first_line, (class_def.end_lineno or first_line) + 1)
+            if number <= len(lines)
         },
     )
 
@@ -406,12 +379,13 @@ def _with_default_none(value: str, call: ast.Call) -> str:
     return f"{value[:opening]}default=None{separator}{value[opening:]}"
 
 
-def _decorator_span(registration: Declaration) -> tuple[int, int, int]:
-    text = linecache.getline(registration.filename, registration.lineno).rstrip()
+def _decorator_span(declaration: Declaration, lines: list[str]) -> tuple[int, int, int]:
+    line = declaration.decorator.lineno
+    text = lines[line - 1].rstrip() if line <= len(lines) else ""
     if not text:
-        return registration.lineno, 1, 1
+        return line, 1, 1
     column = len(text) - len(text.lstrip()) + 1
-    return registration.lineno, column, len(text) + 1
+    return line, column, len(text) + 1
 
 
 class _Style:

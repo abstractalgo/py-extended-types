@@ -64,7 +64,7 @@ def _project(tmp_path: Path) -> tuple[Path, Path]:
     contracts = tmp_path / "stdin_contracts.py"
     base.write_text(BASE)
     contracts.write_text(CONTRACTS)
-    # Import once from disk so stale bytecode exists for the override to bypass.
+    # Check once from disk, so mypy's cache holds the on-disk version for overrides to bypass.
     assert _check(tmp_path) == []
     return base, contracts
 
@@ -99,9 +99,9 @@ def test_unsaved_base_model_affects_other_files(tmp_path: Path) -> None:
     ]
 
 
-def test_import_error_names_the_unsaved_file_it_came_from(tmp_path: Path) -> None:
+def test_syntax_error_in_an_unsaved_file_names_that_file(tmp_path: Path) -> None:
     # Given
-    base, contracts = _project(tmp_path)
+    base, _ = _project(tmp_path)
     unsaved_base = BASE + "\nUser.oops(\n"
 
     # When
@@ -109,5 +109,5 @@ def test_import_error_names_the_unsaved_file_it_came_from(tmp_path: Path) -> Non
 
     # Then
     assert [(Path(d["path"]).name, d["rule"], d["origin"]) for d in diagnostics] == [
-        ("stdin_contracts.py", "py-extended-types(import-error)", str(base.resolve()))
+        ("stdin_base.py", "py-extended-types(analysis-error)", str(base.resolve()))
     ]

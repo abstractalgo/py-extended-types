@@ -33,7 +33,7 @@ interface ReportDiagnostic {
   rule: string;
   message: string;
   fix?: ReportFix | null;
-  /** For import errors: the file the exception was raised in. */
+  /** For analysis errors: the file that couldn't be analyzed. */
   origin?: string | null;
 }
 
@@ -186,7 +186,7 @@ function settings(folder: vscode.WorkspaceFolder): Settings {
   };
 }
 
-/** Prefer the workspace's own venv so the checker imports the project's dependencies. */
+/** Prefer the workspace's own venv, whose checker finds the project's installed packages. */
 function resolveCommand(folder: vscode.WorkspaceFolder, configured: string[]): string[] {
   if (configured.length > 0) {
     return configured;
@@ -316,15 +316,15 @@ class FolderChecker {
       const unsavedPaths = new Set(Object.keys(unsaved).map((file) => path.resolve(file)));
       const brokenByEdit = report.diagnostics.find(
         (entry) =>
-          entry.rule === "py-extended-types(import-error)" &&
+          entry.rule === "py-extended-types(analysis-error)" &&
           [entry.path, entry.origin].some((file) => file && unsavedPaths.has(path.resolve(file))),
       );
       if (brokenByEdit) {
-        // Half-typed code often doesn't import yet; the language server already flags it.
-        // Keep the last results rather than flicker until it imports (or is saved). Import
+        // Half-typed code often doesn't parse yet; the language server already flags it.
+        // Keep the last results rather than flicker until it parses (or is saved). Analysis
         // errors in files that aren't being edited are real and get published as usual.
         output.appendLine(
-          `  unsaved code doesn't import yet (${brokenByEdit.message}); keeping previous results`,
+          `  unsaved code doesn't parse yet (${brokenByEdit.message}); keeping previous results`,
         );
         this.setState(this.settledState);
         return;
