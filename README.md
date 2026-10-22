@@ -1,7 +1,8 @@
 # py-extended-types
 
 `@assert_shape` contracts for Python classes: declare that a class has exactly the
-fields of another, or of a `Partial` / `Required` / `Omit` / `Pick` of it.
+fields of another, or of a `Partial` / `Required` / `Omit` / `Pick` of it. `@assert_field`
+does the same for one field's type, like TypeScript's `T["key"]`.
 
 Supported classes are Pydantic models, dataclasses, TypedDicts, NamedTuples, attrs
 classes and plain annotated classes, on either side of the contract. In a plain class, a
@@ -22,17 +23,17 @@ class UserPatch(BaseModel):
     id: int | None = None
     name: str | None = None
 
-@assert_shape(Omit(User, "id", "created_at"))
+@assert_shape(Omit(User, ["id", "created_at"]))
 class CreateUser(BaseModel): ...
 ```
 
-`@assert_shape` does nothing at runtime; `py-extended-types check` verifies it:
+`@assert_shape` (and `@assert_field`) do nothing at runtime; `py-extended-types check` verifies them:
 
 ```
 $ py-extended-types check src/
 src/app/models.py
-  15:1  error  CreateUser is missing required field 'email: str' from Omit[User, 'id']  py-extended-types(missing-field)
-  17:5  error  CreateUser.name has type 'int', expected 'str'                         py-extended-types(type-mismatch)
+  15:1  error  CreateUser is missing required field 'email: str' from Omit[User, 'id' | 'created_at']  py-extended-types(missing-field)
+  17:5  error  CreateUser.name has type 'int', expected 'str'                                        py-extended-types(type-mismatch)
 
 ✖ 2 problems (2 errors, 0 warnings)
 ```
@@ -56,7 +57,7 @@ see the unsaved version too).
 | --- | --- |
 | `Partial(T, nullable=True)` | every field optional; widens to `T \| None` unless `nullable=False` |
 | `Required(T)` | every field required and non-nullable: `T \| None` becomes `T` |
-| `Pick(T, *keys)` / `Omit(T, *keys)` | keep / drop fields; unknown keys are an error |
+| `Pick(T, keys)` / `Omit(T, keys)` | keep / drop fields; `keys` is one name or a list of them; unknown keys are an error |
 | `Record(keys, value)` | a required field per key, like TypeScript's `Record<K, V>`: `keys` is a `Literal[...]`, `KeyOf(T)` or an iterable of names; `value` is a type, or a function of the key returning one |
 | `KeyOf(T)` | `T`'s field names, like `keyof T`; read lazily, so it's a placeholder rather than a `Literal` (`.literal` builds one) |
 
@@ -111,12 +112,34 @@ A class matches a shape when:
   `Literal["a"]` for `str` or `bool` for `int` do not,
 - each field's **required-ness** is the same: an optional field in the shape needs
   a default here, and a required one must not have one,
-- there are **no extra fields** (`extra="allow"` to permit them).
+- there are **no extra fields** (`exact=False` to permit them).
 
-py-extended-types is a dev-time tool only: in the running app `@assert_shape` returns the class
-untouched and records nothing, and shapes are lazy, so no fields are read and no `Map` /
+py-extended-types is a dev-time tool only: in the running app `@assert_shape` / `@assert_field`
+return the class untouched and record nothing, and shapes are lazy, so no fields are read and no `Map` /
 `Filter` function is called. Only `py-extended-types check` (which switches collection on before
 importing your modules) gathers and verifies the declarations.
+
+## One field: `@assert_field`
+
+`@assert_field(name, T, key)` declares that the class's field `name` has the same
+type as `T`'s field `key`, like `name: T["key"]` in TypeScript. Only the type is compared,
+with the same equivalence as above; required-ness and other fields are not checked. Stack
+one decorator per field, and add or remove them without touching the fields themselves:
+
+```python
+from py_extended_types import assert_field
+
+@assert_field("owner_name", User, "name")
+@assert_field("owner_email", User, "email")
+class Project(BaseModel):
+    title: str
+    owner_name: str
+    owner_email: str | None = None
+```
+
+`T` can be a class or any shape (`Partial(User)`'s `"name"` is `str | None`).
+A misspelled key is reported as `invalid-shape`, a missing field as `missing-field` and
+a different type as `type-mismatch`.
 
 ## Examples
 
@@ -184,7 +207,7 @@ class CompleteUser(BaseModel):
 Only the listed fields are kept, with their types and defaults:
 
 ```python
-@assert_shape(Pick(User, "id", "name"))
+@assert_shape(Pick(User, ["id", "name"]))
 class UserSummary(BaseModel):
     id: int
     name: str
@@ -203,7 +226,7 @@ class CreateUser(BaseModel):
     password: str
 ```
 
-`Pick` and `Omit` report a misspelled key (`Omit(User, "idd")`) as `invalid-shape`, listing
+Both `Pick` and `Omit` take one name or a list: `Omit(User, ["id", "password"])`. They report a misspelled key (`Omit(User, "idd")`) as `invalid-shape`, listing
 the fields that do exist.
 
 ### `Record`
@@ -279,7 +302,7 @@ class UserResponse(BaseModel):
 Each helper accepts a class or another helper's result:
 
 ```python
-@assert_shape(Partial(Omit(User, "id", "password")))
+@assert_shape(Partial(Omit(User, ["id", "password"])))
 class ProfilePatch(BaseModel):
     name: str | None = None
     email: str | None = None
@@ -294,7 +317,7 @@ and `Public` above) to get completions for `m`.
 ## CLI
 
 ```
-py-extended-types check [PATHS...] [-v]           # verify @assert_shape declarations in PATHS (default .); -v prints a summary on success
+py-extended-types check [PATHS...] [-v]           # verify @assert_shape / @assert_field declarations in PATHS (default .); -v prints a summary on success
 py-extended-types show 'pkg.mod:Partial(User)'    # print a class's / shape's fields
 ```
 
@@ -302,7 +325,7 @@ The checker imports your modules, so it runs under **your project's**
 interpreter: `--python`, else `$VIRTUAL_ENV`, else the nearest `.venv`. It puts
 this package on `PYTHONPATH` (it has no dependencies), so the project doesn't
 need it installed just to run the check. `--no-venv` disables this. Only files
-mentioning both `assert_shape(` and `py_extended_types` are imported.
+mentioning `assert_shape(` or `assert_field(`, and `py_extended_types`, are imported.
 
 ## Limitations
 
@@ -318,10 +341,10 @@ top-level code with your project's interpreter. Modules with import-time side ef
 (connecting to services, reading required environment variables) run those too, and a
 module that fails to import is reported as `import-error` instead of being checked.
 
-**Only declarations that run on import are checked.** `@assert_shape` records a class when
+**Only declarations that run on import are checked.** `@assert_shape` and `@assert_field` record a class when
 the decorator executes, so a class defined inside a function, or under
-`if TYPE_CHECKING:`, is never seen. Files are also skipped unless they contain both
-`assert_shape(` and `py_extended_types`, so re-exporting the decorator from another module
+`if TYPE_CHECKING:`, is never seen. Files are also skipped unless they contain
+`assert_shape(` or `assert_field(`, and `py_extended_types`, so re-exporting the decorators from another module
 of yours hides the files that use it.
 
 **Type comparison approximates mypy and pyright.**

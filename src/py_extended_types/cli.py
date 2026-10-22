@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="py-extended-types",
-        description="Verify `@assert_shape` contracts between Python classes.",
+        description="Verify `@assert_shape` / `@assert_field` contracts between Python classes.",
     )
     parser.add_argument(
         "--version", action="version", version=f"py-extended-types {_version()}"
@@ -100,7 +100,7 @@ def _build_parser() -> argparse.ArgumentParser:
     check_parser = subcommands.add_parser(
         "check",
         parents=[common],
-        help="verify every @assert_shape declaration under PATHS",
+        help="verify every @assert_shape / @assert_field declaration under PATHS",
     )
     check_parser.add_argument("paths", nargs="*", default=["."], type=Path)
     check_parser.add_argument(
@@ -191,16 +191,18 @@ def _run_check(
     checked = [r for r in registrations() if Path(r.filename).resolve() in scanned]
     for registration in checked:
         diagnostics.extend(diagnostics_for(registration, check(registration)))
+    # A class can carry several declarations (one `@assert_field` per field).
+    classes = len({id(r.cls) for r in checked})
 
     if output_format == "json":
-        print(render_json(diagnostics, classes=len(checked), files=len(files)))
+        print(render_json(diagnostics, classes=classes, files=len(files)))
         return 1 if diagnostics else 0
     if diagnostics:
         print(render_stylish(diagnostics, color=use_color()))
         return 1
     if verbose:
         print(
-            f"✔ {len(checked)} class{'es' if len(checked) != 1 else ''} checked in "
+            f"✔ {classes} class{'es' if classes != 1 else ''} checked in "
             f"{len(files)} file{'s' if len(files) != 1 else ''}, 0 problems"
         )
     return 0
@@ -224,7 +226,9 @@ def _discover(paths: list[Path], sources: dict[Path, str]) -> Iterator[Path]:
                         source = file.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError):
                         continue
-                if "assert_shape(" in source and "py_extended_types" in source:
+                if (
+                    "assert_shape(" in source or "assert_field(" in source
+                ) and "py_extended_types" in source:
                     yield file
 
 

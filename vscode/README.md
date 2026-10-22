@@ -1,6 +1,6 @@
 # py-extended-types for VS Code
 
-Shows [py-extended-types](../README.md) `@assert_shape` contract errors as
+Shows [py-extended-types](../README.md) `@assert_shape` / `@assert_field` contract errors as
 diagnostics (Problems panel + squiggles on the offending field), with quick fixes
 (the gutter lightbulb / `Cmd+.`):
 

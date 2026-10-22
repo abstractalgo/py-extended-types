@@ -1,9 +1,9 @@
 {
   "name": "py-extended-types",
   "displayName": "py-extended-types",
-  "description": "Shows py-extended-types @assert_shape contract errors as diagnostics while you type, with quick fixes.",
+  "description": "Shows py-extended-types @assert_shape / @assert_field contract errors as diagnostics while you type, with quick fixes.",
   "version": "0.4.1",
-  "publisher": "primer",
+  "publisher": "abstractalgo",
   "repository": {
     "type": "git",
     "url": "https://github.com/abstractalgo/py-extended-types",

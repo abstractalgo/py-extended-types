@@ -12,7 +12,7 @@ from py_extended_types import (
     assert_shape,
     core,
 )
-from py_extended_types.core import Registration, check, registrations
+from py_extended_types.core import Declaration, check, registrations
 
 
 class User(BaseModel):
@@ -24,7 +24,7 @@ class User(BaseModel):
 
 
 def _problems(cls: type) -> list[str]:
-    registration: Registration = next(r for r in registrations() if r.cls is cls)
+    registration: Declaration = next(r for r in registrations() if r.cls is cls)
     return [f"{problem.rule}: {problem.message}" for problem in check(registration)]
 
 
@@ -60,7 +60,7 @@ def test_required_undoes_partial() -> None:
 
 
 def test_required_class_matches_without_none() -> None:
-    @assert_shape(Required(Pick(User, "id", "nickname")))
+    @assert_shape(Required(Pick(User, ["id", "nickname"])))
     class Strict(BaseModel):
         id: int
         nickname: str
@@ -76,8 +76,8 @@ def test_required_class_matches_without_none() -> None:
 
 
 def test_pick_and_omit_select_fields() -> None:
-    assert list(Pick(User, "id", "name").fields) == ["id", "name"]
-    assert list(Omit(User, "id", "tags").fields) == ["name", "email", "nickname"]
+    assert list(Pick(User, ["id", "name"]).fields) == ["id", "name"]
+    assert list(Omit(User, ["id", "tags"]).fields) == ["name", "email", "nickname"]
 
 
 def test_unknown_key_is_reported_lazily() -> None:
@@ -115,7 +115,7 @@ def test_missing_optional_field_is_reported() -> None:
 
 
 def test_required_field_where_partial_expects_optional_is_reported() -> None:
-    @assert_shape(Partial(Pick(User, "id", "name")))
+    @assert_shape(Partial(Pick(User, ["id", "name"])))
     class Patch(BaseModel):
         id: int | None
         name: str
@@ -143,7 +143,7 @@ def test_reports_type_mismatch_missing_and_extra_fields() -> None:
 
 
 def test_extra_allow_permits_additional_fields() -> None:
-    @assert_shape(Pick(User, "id"), extra="allow")
+    @assert_shape(Pick(User, "id"), exact=False)
     class UserWithMeta(BaseModel):
         id: int
         meta: dict[str, str]
@@ -162,7 +162,7 @@ def test_required_field_with_default_is_rejected() -> None:
 
 
 def test_narrower_types_do_not_match() -> None:
-    @assert_shape(Pick(User, "name", "id"))
+    @assert_shape(Pick(User, ["name", "id"]))
     class Narrow(BaseModel):
         name: Literal["a", "b"]
         id: bool

@@ -32,7 +32,7 @@ from py_extended_types import (
     core,
     is_assignable,
 )
-from py_extended_types.core import Registration, check, registrations
+from py_extended_types.core import Declaration, check, registrations
 
 
 class User(BaseModel):
@@ -45,7 +45,7 @@ class User(BaseModel):
 
 
 def _problems(cls: type) -> list[str]:
-    registration: Registration = next(r for r in registrations() if r.cls is cls)
+    registration: Declaration = next(r for r in registrations() if r.cls is cls)
     return [f"{problem.rule}: {problem.message}" for problem in check(registration)]
 
 
@@ -246,7 +246,7 @@ def test_invalid_records_are_shape_errors(
 
 def test_key_of_lists_a_shapes_field_names() -> None:
     # Given
-    keys = KeyOf(Omit(User, "secret", "created_at"))
+    keys = KeyOf(Omit(User, ["secret", "created_at"]))
 
     # Then
     assert repr(keys) == "KeyOf[Omit[User, 'secret' | 'created_at']]"
@@ -257,7 +257,8 @@ def test_key_of_lists_a_shapes_field_names() -> None:
 def test_record_over_key_of_another_class() -> None:
     # Given
     shape = Record(
-        KeyOf(Pick(User, "id", "email")), lambda key: list[str] if key == "id" else str
+        KeyOf(Pick(User, ["id", "email"])),
+        lambda key: list[str] if key == "id" else str,
     )
 
     # Then
@@ -376,7 +377,7 @@ def test_members_of_plain_classes() -> None:
 
 
 def test_plain_decorated_class_is_checked() -> None:
-    @assert_shape(Pick(User, "id", "email"))
+    @assert_shape(Pick(User, ["id", "email"]))
     class Untyped:
         id: int
         email: str | None

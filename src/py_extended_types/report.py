@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from py_extended_types.core import Problem, Registration
+from py_extended_types.core import Declaration, Problem
 from py_extended_types.shapes import Member
 from py_extended_types.typecheck import format_type, includes_none
 
@@ -61,7 +61,7 @@ class Diagnostic:
 
 
 def diagnostics_for(
-    registration: Registration, problems: Sequence[Problem]
+    registration: Declaration, problems: Sequence[Problem]
 ) -> list[Diagnostic]:
     """Pin each problem to its field's name, or to the decorator when the field isn't declared here."""
     path = str(Path(registration.filename).resolve())
@@ -406,7 +406,7 @@ def _with_default_none(value: str, call: ast.Call) -> str:
     return f"{value[:opening]}default=None{separator}{value[opening:]}"
 
 
-def _decorator_span(registration: Registration) -> tuple[int, int, int]:
+def _decorator_span(registration: Declaration) -> tuple[int, int, int]:
     text = linecache.getline(registration.filename, registration.lineno).rstrip()
     if not text:
         return registration.lineno, 1, 1

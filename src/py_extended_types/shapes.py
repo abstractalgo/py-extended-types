@@ -17,7 +17,7 @@ import functools
 import inspect
 import types
 import typing
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -239,28 +239,42 @@ def Required(target: ShapeLike) -> Shape:  # noqa: N802
     )
 
 
-def Pick(target: ShapeLike, *keys: str) -> Shape:  # noqa: N802
-    """Keep only the given fields; unknown keys are an error."""
+def Pick(target: ShapeLike, keys: str | Sequence[str], /) -> Shape:  # noqa: N802
+    """Keep only the given fields: one name, or a list of them. Unknown keys are an error."""
     base = as_shape(target)
-    label = f"Pick[{base!r}, {_format_keys(keys)}]"
+    picked = _key_tuple(keys)
+    label = f"Pick[{base!r}, {_format_keys(picked)}]"
     return _with_known_keys(
-        Filter(base, lambda member: member.name in keys, name=label), base, keys
+        Filter(base, lambda member: member.name in picked, name=label), base, picked
     )
 
 
-def Omit(target: ShapeLike, *keys: str) -> Shape:  # noqa: N802
-    """Drop the given fields; unknown keys are an error."""
+def Omit(target: ShapeLike, keys: str | Sequence[str], /) -> Shape:  # noqa: N802
+    """Drop the given fields: one name, or a list of them. Unknown keys are an error."""
     base = as_shape(target)
-    label = f"Omit[{base!r}, {_format_keys(keys)}]"
+    omitted = _key_tuple(keys)
+    label = f"Omit[{base!r}, {_format_keys(omitted)}]"
     return _with_known_keys(
-        Filter(base, lambda member: member.name not in keys, name=label), base, keys
+        Filter(base, lambda member: member.name not in omitted, name=label),
+        base,
+        omitted,
     )
+
+
+def _key_tuple(keys: str | Sequence[str]) -> tuple[str, ...]:
+    # Anything that isn't a list of names is kept as one key, so it's reported lazily.
+    if isinstance(keys, str) or not isinstance(keys, Iterable):
+        return (keys,)  # type: ignore[return-value]
+    return tuple(keys)
 
 
 def _with_known_keys(shape: Shape, base: Shape, keys: tuple[str, ...]) -> Shape:
     def compute() -> dict[str, Member]:
         if not keys:
             raise ShapeError(f"{shape!r}: at least one key is required")
+        invalid = [key for key in keys if not isinstance(key, str)]
+        if invalid:
+            raise ShapeError(f"{shape!r}: keys must be strings, got {invalid[0]!r}")
         unknown = [key for key in keys if key not in base.fields]
         if unknown:
             raise ShapeError(
